@@ -1,14 +1,16 @@
-/** @type {import("eslint").Linter.Config} */
-module.exports = {
-  extends: ["./base.js"],
-  rules: {
-    "@typescript-eslint/interface-name-prefix": "off",
-    "@typescript-eslint/explicit-function-return-type": "off",
-    "@typescript-eslint/explicit-module-boundary-types": "off",
-    "@typescript-eslint/no-explicit-any": "off",
-  },
-  env: {
-    node: true,
-    jest: true,
-  },
-};
+import js from "@eslint/js";
+import eslintConfigPrettier from "eslint-config-prettier";
+import tseslint from "typescript-eslint";
+import { config as baseConfig } from "./base.js";
+
+/**
+ * A custom ESLint configuration for NestJS applications
+ * @type {import("eslint").Linter.Config[]}
+ */
+export const nestJsConfig = [
+  ...baseConfig,
+  js.configs.recommended,
+  eslintConfigPrettier,
+  ...tseslint.configs.recommended,
+  ...tseslint.configs.strict,
+];

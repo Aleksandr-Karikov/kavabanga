@@ -1,9 +1,6 @@
-
+import { test } from "./test";
 
 export default function Home() {
-  return (
-    <div>
-
-    </div>
-  );
+  test();
+  return <div></div>;
 }
