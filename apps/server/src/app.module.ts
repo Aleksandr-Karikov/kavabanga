@@ -2,8 +2,11 @@ import { MikroOrmModule } from "@mikro-orm/nestjs";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { envValidationSchema } from "src/env.validation";
 import { PostgreSqlDriver } from "@mikro-orm/postgresql";
-import { Module } from "@nestjs/common";
+import { MiddlewareConsumer, Module } from "@nestjs/common";
 import { join } from "path";
+import { LoggerMiddleware } from "src/logger.middleware";
+import { AuthModule } from "./auth/auth.module";
+import { UsersModule } from "./users/users.module";
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -14,8 +17,8 @@ import { join } from "path";
     MikroOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
-        entities: [join(__dirname, "../**/*.entity.js")],
-        entitiesTs: [join(__dirname, "../**/*.entity.ts")],
+        entities: [join(__dirname, "dist/**/*.entity.js")],
+        entitiesTs: [join(__dirname, "src/**/*.entity.ts")],
         host: configService.get("DB_HOST"),
         port: configService.get("DB_PORT"),
         dbName: configService.get("DB_NAME"),
@@ -26,9 +29,16 @@ import { join } from "path";
       }),
       inject: [ConfigService],
     }),
+
+    AuthModule,
+
+    UsersModule,
   ],
   controllers: [],
   providers: [],
 })
-// eslint-disable-next-line @typescript-eslint/no-extraneous-class
-export class AppModule {}
+export class AppModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(LoggerMiddleware);
+  }
+}
