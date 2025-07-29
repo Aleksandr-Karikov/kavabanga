@@ -10,11 +10,11 @@ import {
   Req,
   HttpStatus,
 } from "@nestjs/common";
-import { JwtAuthGuard } from "./jwt-auth.guard";
-import { LocalAuthGuard } from "./local-auth.guard";
+import { JwtAuthGuard } from "./strategies/access-jwt-strategy/jwt-auth.guard";
+import { LocalAuthGuard } from "./strategies/local-strategy/local-auth.guard";
+import { RefreshJwtAuthGuard } from "./strategies/refresh-jwt-strategy/refresh-jwt.guard";
 import { fastifyCookie } from "@fastify/cookie";
 import { User } from "src/users/user.entity";
-import { RefreshJwtAuthGuard } from "src/auth/refresh-jwt.guard";
 import { ApiBearerAuth, ApiBody, ApiResponse } from "@nestjs/swagger";
 @Controller("auth")
 export class AuthController {
