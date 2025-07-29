@@ -6,7 +6,10 @@ import { ConfigService } from "@nestjs/config";
 import { RefreshTokenPayload } from "src/auth/auth.types";
 
 @Injectable()
-export class RefreshJwtStrategy extends PassportStrategy(Strategy) {
+export class RefreshJwtStrategy extends PassportStrategy(
+  Strategy,
+  "refresh-jwt"
+) {
   constructor(
     configService: ConfigService,
     private readonly authService: AuthService

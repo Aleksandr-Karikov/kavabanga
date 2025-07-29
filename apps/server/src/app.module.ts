@@ -2,9 +2,8 @@ import { MikroOrmModule } from "@mikro-orm/nestjs";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { envValidationSchema } from "src/env.validation";
 import { PostgreSqlDriver } from "@mikro-orm/postgresql";
-import { MiddlewareConsumer, Module } from "@nestjs/common";
+import { Module } from "@nestjs/common";
 import { join } from "path";
-import { LoggerMiddleware } from "src/logger.middleware";
 import { AuthModule } from "./auth/auth.module";
 import { UsersModule } from "./users/users.module";
 @Module({
@@ -35,8 +34,5 @@ import { UsersModule } from "./users/users.module";
   controllers: [],
   providers: [],
 })
-export class AppModule {
-  configure(consumer: MiddlewareConsumer) {
-    consumer.apply(LoggerMiddleware);
-  }
-}
+// eslint-disable-next-line @typescript-eslint/no-extraneous-class
+export class AppModule {}

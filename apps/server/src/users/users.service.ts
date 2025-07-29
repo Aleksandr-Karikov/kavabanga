@@ -1,12 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import { User } from "src/users/user.entity";
 import * as bcrypt from "bcrypt";
+import { v4 } from "uuid";
 
 @Injectable()
 export class UsersService {
   private readonly users: User[] = [
     {
-      uuid: "1",
+      uuid: v4(),
       username: "john",
       password: bcrypt.hashSync("password", 10),
       email: "",
