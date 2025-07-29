@@ -15,7 +15,12 @@ import { LocalAuthGuard } from "./strategies/local-strategy/local-auth.guard";
 import { RefreshJwtAuthGuard } from "./strategies/refresh-jwt-strategy/refresh-jwt.guard";
 import { fastifyCookie } from "@fastify/cookie";
 import { User } from "src/users/user.entity";
-import { ApiBearerAuth, ApiBody, ApiResponse } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiOperation,
+  ApiResponse,
+} from "@nestjs/swagger";
 @Controller("auth")
 export class AuthController {
   constructor(private authService: AuthService) {}
@@ -48,9 +53,23 @@ export class AuthController {
       },
     },
   })
+  @ApiOperation({
+    summary: "Login",
+    description: "Authenticates user and sets an HTTP-only cookie with JWT.",
+  })
   @ApiResponse({
     status: 200,
     description: "Successful login",
+    headers: {
+      "Set-Cookie": {
+        description: "Sets an HTTP-only cookie with the JWT refresh token",
+        schema: {
+          type: "string",
+          example:
+            "refreshToken=abcde12345; Path=/; HttpOnly; Secure; SameSite=Strict",
+        },
+      },
+    },
     schema: {
       type: "object",
       properties: {
@@ -75,6 +94,30 @@ export class AuthController {
 
   @Post("refresh")
   @UseGuards(RefreshJwtAuthGuard)
+  @ApiOperation({
+    summary: "Refresh access token",
+    description: "Refresh access token and sets an HTTP-only cookie with JWT.",
+  })
+  @ApiResponse({
+    status: 200,
+    description: "Successful refresh",
+    headers: {
+      "Set-Cookie": {
+        description: "Sets an HTTP-only cookie with the JWT refresh token",
+        schema: {
+          type: "string",
+          example:
+            "refreshToken=abcde12345; Path=/; HttpOnly; Secure; SameSite=Strict",
+        },
+      },
+    },
+    schema: {
+      type: "object",
+      properties: {
+        accessToken: { type: "string" },
+      },
+    },
+  })
   async refresh(@Req() req: { user: User }, @Res() res: FastifyReply) {
     try {
       const { accessToken, refreshToken } = await this.authService.login(
