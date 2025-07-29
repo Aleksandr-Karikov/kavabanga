@@ -17,8 +17,8 @@ import { UsersModule } from "./users/users.module";
     MikroOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
-        entities: [join(__dirname, "dist/**/*.entity.js")],
-        entitiesTs: [join(__dirname, "src/**/*.entity.ts")],
+        entities: [join(__dirname, "../**/*.entity.js")],
+        entitiesTs: [join(__dirname, "./**/*.entity.ts")],
         host: configService.get("DB_HOST"),
         port: configService.get("DB_PORT"),
         dbName: configService.get("DB_NAME"),
@@ -29,9 +29,7 @@ import { UsersModule } from "./users/users.module";
       }),
       inject: [ConfigService],
     }),
-
     AuthModule,
-
     UsersModule,
   ],
   controllers: [],
