@@ -4,7 +4,6 @@ import {
   Controller,
   Get,
   Post,
-  Request,
   UseGuards,
   Res,
   Req,
@@ -13,7 +12,6 @@ import {
 import { JwtAuthGuard } from "./strategies/access-jwt-strategy/jwt-auth.guard";
 import { LocalAuthGuard } from "./strategies/local-strategy/local-auth.guard";
 import { RefreshJwtAuthGuard } from "./strategies/refresh-jwt-strategy/refresh-jwt.guard";
-import { fastifyCookie } from "@fastify/cookie";
 import { User } from "src/users/user.entity";
 import {
   ApiBearerAuth,
@@ -23,19 +21,18 @@ import {
 } from "@nestjs/swagger";
 @Controller("auth")
 export class AuthController {
+  private readonly REFRESH_COOKIE_NAME = "refreshToken";
   constructor(private authService: AuthService) {}
 
   private async setRefreshTokenToCookie(
     res: FastifyReply,
     refreshToken: string
   ) {
-    const cookie = fastifyCookie.serialize("refreshToken", refreshToken, {
+    res.setCookie(this.REFRESH_COOKIE_NAME, refreshToken, {
       maxAge: 7 * 24 * 60 * 60,
       httpOnly: true,
       sameSite: "strict",
     });
-
-    res.header("Set-Cookie", cookie);
   }
 
   @UseGuards(LocalAuthGuard)
@@ -77,7 +74,7 @@ export class AuthController {
       },
     },
   })
-  async login(@Request() req, @Res() res: FastifyReply) {
+  async login(@Req() req, @Res() res: FastifyReply) {
     try {
       const { accessToken, refreshToken } = await this.authService.login(
         req.user
@@ -85,9 +82,10 @@ export class AuthController {
       await this.setRefreshTokenToCookie(res, refreshToken);
       res.send({ accessToken });
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).send({
         message: "Login failed",
-        error: error.message,
+        error: message,
       });
     }
   }
@@ -126,23 +124,24 @@ export class AuthController {
       await this.setRefreshTokenToCookie(res, refreshToken);
       res.send({ accessToken });
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).send({
-        message: "Login failed",
-        error: error.message,
+        message: "Refresh failed",
+        error: message,
       });
     }
   }
 
-  @UseGuards(LocalAuthGuard)
+  @UseGuards(RefreshJwtAuthGuard)
   @Post("logout")
-  async logout(@Request() req) {
-    return req.logout();
+  async logout(@Res() res: FastifyReply) {
+    res.clearCookie(this.REFRESH_COOKIE_NAME);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get("profile")
   @ApiBearerAuth()
-  getProfile(@Request() req) {
+  getProfile(@Req() req) {
     return req.user;
   }
 }

@@ -4,9 +4,8 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from "@nestjs/platform-fastify";
-import * as fastifyCookie from "@fastify/cookie";
-import * as fastifyStatic from "@fastify/static";
-import { FastifyCookieOptions } from "@fastify/cookie";
+import fastifyStatic from "@fastify/static";
+import fastifyCookie from "@fastify/cookie";
 import { ConfigService } from "@nestjs/config";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { FastifyStaticOptions } from "@fastify/static";
@@ -21,7 +20,7 @@ async function bootstrap() {
   );
 
   const configService = app.get(ConfigService);
-  await app.register<FastifyCookieOptions>(fastifyCookie, {
+  await app.register(fastifyCookie, {
     secret: configService.get<string>("COOKIE_SECRET"),
   });
 
