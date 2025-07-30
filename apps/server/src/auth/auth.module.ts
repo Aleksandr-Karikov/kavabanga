@@ -8,7 +8,6 @@ import { JwtStrategy } from "./strategies/access-jwt-strategy/jwt.strategy";
 import { LocalStrategy } from "./strategies/local-strategy/local.strategy";
 import { RefreshStrategy } from "./strategies/refresh-strategy/refresh.strategy";
 import { ConfigService } from "@nestjs/config";
-import { ACCESS_TOKEN_TTL_MINUTE } from "src/auth/auth.constants";
 
 @Module({
   imports: [
@@ -19,7 +18,7 @@ import { ACCESS_TOKEN_TTL_MINUTE } from "src/auth/auth.constants";
         return {
           secret: configService.get<string>("JWT_ACCESS_SECRET"),
           signOptions: {
-            expiresIn: `${ACCESS_TOKEN_TTL_MINUTE}m`,
+            expiresIn: `${configService.get<number>("ACCESS_TOKEN_TTL_MINUTE")}m`,
           },
         };
       },

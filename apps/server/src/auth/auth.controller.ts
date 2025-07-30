@@ -10,20 +10,28 @@ import {
   ApiOperation,
   ApiResponse,
 } from "@nestjs/swagger";
-import { REFRESH_TOKEN_TTL_DAYS } from "src/auth/auth.constants";
 import { RefreshUser } from "src/auth/strategies/refresh-strategy/refresh.strategy";
+import { ConfigService } from "@nestjs/config";
 
 @Controller("auth")
 export class AuthController {
   private readonly REFRESH_COOKIE_NAME = "refreshToken";
-  constructor(private authService: AuthService) {}
+  private readonly REFRESH_TOKEN_TTL_DAYS;
+  constructor(
+    private authService: AuthService,
+    configService: ConfigService
+  ) {
+    this.REFRESH_TOKEN_TTL_DAYS = configService.get<number>(
+      "REFRESH_TOKEN_TTL_DAYS"
+    );
+  }
 
   private async setRefreshTokenToCookie(
     res: FastifyReply,
     refreshToken: string
   ) {
     res.setCookie(this.REFRESH_COOKIE_NAME, refreshToken, {
-      maxAge: REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60,
+      maxAge: this.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60,
       httpOnly: true,
       sameSite: "strict",
     });

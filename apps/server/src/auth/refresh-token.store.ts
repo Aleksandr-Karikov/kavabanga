@@ -1,9 +1,6 @@
 import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { Redis } from "ioredis";
-import {
-  REFRESH_TOKEN_TTL_DAYS,
-  USED_TOKEN_TTL_MINUTE,
-} from "src/auth/auth.constants";
 
 interface RefreshTokenData {
   userId: string;
@@ -14,11 +11,19 @@ interface RefreshTokenData {
 
 @Injectable()
 export class RefreshTokenStore {
-  private readonly TTL_SECONDS = 60 * 60 * 24 * REFRESH_TOKEN_TTL_DAYS;
-  private readonly USED_TOKEN_TTL_SECONDS = USED_TOKEN_TTL_MINUTE * 60;
+  private readonly TTL_SECONDS: number;
+  private readonly USED_TOKEN_TTL_SECONDS: number;
   private readonly REFRESH_TOKEN_REDIS_PREFIX = "refresh";
 
-  constructor(private readonly redis: Redis) {}
+  constructor(
+    private readonly redis: Redis,
+    configService: ConfigService
+  ) {
+    this.TTL_SECONDS =
+      60 * 60 * 24 * configService.get<number>("REFRESH_TOKEN_TTL_DAYS");
+    this.USED_TOKEN_TTL_SECONDS =
+      60 * configService.get<number>("USED_TOKEN_TTL_MINUTE");
+  }
 
   private getKey(token: string): string {
     return `${this.REFRESH_TOKEN_REDIS_PREFIX}:${token}`;

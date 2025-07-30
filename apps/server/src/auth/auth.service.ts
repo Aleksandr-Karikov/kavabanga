@@ -3,8 +3,6 @@ import { JwtService } from "@nestjs/jwt";
 import { User } from "src/users/user.entity";
 import { UsersService } from "src/users/users.service";
 import * as bcrypt from "bcrypt";
-import { InjectRedis } from "@nestjs-modules/ioredis";
-import Redis from "ioredis";
 import { v7 } from "uuid";
 import { RefreshTokenStore } from "src/auth/refresh-token.store";
 import crypto from "crypto";
@@ -13,8 +11,7 @@ export class AuthService {
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
-    private tokenStore: RefreshTokenStore,
-    @InjectRedis() private readonly redis: Redis
+    private tokenStore: RefreshTokenStore
   ) {}
 
   async validateUserPassword(
