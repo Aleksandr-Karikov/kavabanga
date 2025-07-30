@@ -1,13 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import { User } from "src/users/user.entity";
 import * as bcrypt from "bcrypt";
-import { v4 } from "uuid";
+import { v7 } from "uuid";
 
 @Injectable()
 export class UsersService {
   private readonly users: User[] = [
     {
-      uuid: v4(),
+      uuid: v7(),
       username: "john",
       password: bcrypt.hashSync("password", 10),
       email: "",
@@ -20,7 +20,11 @@ export class UsersService {
     },
   ];
 
-  async findOne(username: string): Promise<User | undefined> {
+  async findByUsername(username: string): Promise<User | undefined> {
     return this.users.find((user) => user.username === username);
+  }
+
+  async findByUUID(uuid: string): Promise<User | undefined> {
+    return this.users.find((user) => user.uuid === uuid);
   }
 }

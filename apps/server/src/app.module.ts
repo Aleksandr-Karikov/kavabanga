@@ -6,13 +6,13 @@ import { Module } from "@nestjs/common";
 import { join } from "path";
 import { AuthModule } from "./auth/auth.module";
 import { UsersModule } from "./users/users.module";
+import { RedisModule } from "@nestjs-modules/ioredis";
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       validationSchema: envValidationSchema,
     }),
-
     MikroOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
@@ -27,6 +27,14 @@ import { UsersModule } from "./users/users.module";
         debug: configService.get("NODE_ENV") === "development",
       }),
       inject: [ConfigService],
+    }),
+    RedisModule.forRootAsync({
+      useFactory: (configService: ConfigService) => ({
+        type: "single",
+        url: configService.get<string>("REDIS_URL"),
+      }),
+      inject: [ConfigService],
+      imports: [ConfigService],
     }),
     AuthModule,
     UsersModule,

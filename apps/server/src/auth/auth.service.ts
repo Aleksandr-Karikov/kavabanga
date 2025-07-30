@@ -1,28 +1,27 @@
 import { Injectable } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { User } from "src/users/user.entity";
 import { UsersService } from "src/users/users.service";
 import * as bcrypt from "bcrypt";
+import { InjectRedis } from "@nestjs-modules/ioredis";
+import Redis from "ioredis";
+import { v7 } from "uuid";
+import { RefreshTokenStore } from "src/auth/refresh-token.store";
+import crypto from "crypto";
 @Injectable()
 export class AuthService {
-  private accessSecret: string;
-  private refreshSecret: string;
-
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
-    configService: ConfigService
-  ) {
-    this.accessSecret = configService.get<string>("JWT_ACCESS_SECRET");
-    this.refreshSecret = configService.get<string>("JWT_REFRESH_SECRET");
-  }
+    private tokenStore: RefreshTokenStore,
+    @InjectRedis() private readonly redis: Redis
+  ) {}
 
   async validateUserPassword(
     username: string,
     pass: string
   ): Promise<Omit<User, "password">> {
-    const user = await this.usersService.findOne(username);
+    const user = await this.usersService.findByUsername(username);
     if (user) {
       const isCorrectPassword = bcrypt.compareSync(pass, user.password);
       if (isCorrectPassword) {
@@ -37,25 +36,39 @@ export class AuthService {
   }
 
   async validateUserByUserName(userName: string): Promise<User | null> {
-    return this.usersService.findOne(userName) ?? null;
+    return this.usersService.findByUsername(userName) ?? null;
   }
 
-  async login(
-    user: User
+  async refreshToken(
+    oldToken: string,
+    user: User,
+    deviceId?: string
   ): Promise<{ accessToken: string; refreshToken: string }> {
+    await this.tokenStore.markUsed(oldToken);
+
+    return this.login(user, deviceId);
+  }
+
+  async logout(refreshToken: string) {
+    await this.tokenStore.delete(refreshToken);
+  }
+
+  async login(user: User, deviceId?: string) {
     const payload = { username: user.username, sub: user.uuid };
+    const accessToken = this.jwtService.sign(payload);
+
+    const refreshToken = crypto.randomBytes(32).toString("hex");
+    const resolvedDeviceId = deviceId ?? v7();
+
+    await this.tokenStore.save(refreshToken, {
+      userId: user.uuid,
+      deviceId: resolvedDeviceId,
+      issuedAt: Date.now(),
+    });
+
     return {
-      accessToken: this.jwtService.sign(payload, {
-        expiresIn: "15m",
-        secret: this.accessSecret,
-      }),
-      refreshToken: this.jwtService.sign(
-        { ...payload, refresh: true },
-        {
-          secret: this.refreshSecret,
-          expiresIn: "7d",
-        }
-      ),
+      accessToken,
+      refreshToken,
     };
   }
 }

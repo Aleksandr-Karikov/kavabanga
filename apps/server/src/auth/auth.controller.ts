@@ -1,24 +1,18 @@
-import { FastifyReply } from "fastify";
+import { FastifyReply, FastifyRequest } from "fastify";
 import { AuthService } from "./auth.service";
-import {
-  Controller,
-  Get,
-  Post,
-  UseGuards,
-  Res,
-  Req,
-  HttpStatus,
-} from "@nestjs/common";
+import { Controller, Get, Post, UseGuards, Res, Req } from "@nestjs/common";
 import { JwtAuthGuard } from "./strategies/access-jwt-strategy/jwt-auth.guard";
 import { LocalAuthGuard } from "./strategies/local-strategy/local-auth.guard";
-import { RefreshJwtAuthGuard } from "./strategies/refresh-jwt-strategy/refresh-jwt.guard";
-import { User } from "src/users/user.entity";
+import { RefreshAuthGuard } from "./strategies/refresh-strategy/refresh.guard";
 import {
   ApiBearerAuth,
   ApiBody,
   ApiOperation,
   ApiResponse,
 } from "@nestjs/swagger";
+import { REFRESH_TOKEN_TTL_DAYS } from "src/auth/auth.constants";
+import { RefreshUser } from "src/auth/strategies/refresh-strategy/refresh.strategy";
+
 @Controller("auth")
 export class AuthController {
   private readonly REFRESH_COOKIE_NAME = "refreshToken";
@@ -29,7 +23,7 @@ export class AuthController {
     refreshToken: string
   ) {
     res.setCookie(this.REFRESH_COOKIE_NAME, refreshToken, {
-      maxAge: 7 * 24 * 60 * 60,
+      maxAge: REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60,
       httpOnly: true,
       sameSite: "strict",
     });
@@ -75,23 +69,18 @@ export class AuthController {
     },
   })
   async login(@Req() req, @Res() res: FastifyReply) {
-    try {
-      const { accessToken, refreshToken } = await this.authService.login(
-        req.user
-      );
-      await this.setRefreshTokenToCookie(res, refreshToken);
-      res.send({ accessToken });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      res.status(HttpStatus.INTERNAL_SERVER_ERROR).send({
-        message: "Login failed",
-        error: message,
-      });
-    }
+    const deviceId = req.headers["x-device-id"] || "default-device";
+    const { accessToken, refreshToken } = await this.authService.login(
+      req.user,
+      deviceId
+    );
+
+    await this.setRefreshTokenToCookie(res, refreshToken);
+    res.send({ accessToken });
   }
 
+  @UseGuards(RefreshAuthGuard)
   @Post("refresh")
-  @UseGuards(RefreshJwtAuthGuard)
   @ApiOperation({
     summary: "Refresh access token",
     description: "Refresh access token and sets an HTTP-only cookie with JWT.",
@@ -116,26 +105,27 @@ export class AuthController {
       },
     },
   })
-  async refresh(@Req() req: { user: User }, @Res() res: FastifyReply) {
-    try {
-      const { accessToken, refreshToken } = await this.authService.login(
-        req.user
-      );
-      await this.setRefreshTokenToCookie(res, refreshToken);
-      res.send({ accessToken });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      res.status(HttpStatus.INTERNAL_SERVER_ERROR).send({
-        message: "Refresh failed",
-        error: message,
-      });
-    }
+  async refresh(@Req() req: FastifyRequest, @Res() res: FastifyReply) {
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    //@ts-expect-error
+    const { user, refreshToken: oldToken, deviceId } = req.user as RefreshUser;
+
+    const { accessToken, refreshToken } = await this.authService.refreshToken(
+      oldToken,
+      user,
+      deviceId
+    );
+
+    await this.setRefreshTokenToCookie(res, refreshToken);
+    res.send({ accessToken });
   }
 
-  @UseGuards(RefreshJwtAuthGuard)
   @Post("logout")
-  async logout(@Res() res: FastifyReply) {
+  async logout(@Req() req, @Res() res: FastifyReply) {
+    const refreshToken = req.cookies?.[this.REFRESH_COOKIE_NAME];
+    if (refreshToken) await this.authService.logout(refreshToken);
     res.clearCookie(this.REFRESH_COOKIE_NAME);
+    res.send({ ok: true });
   }
 
   @UseGuards(JwtAuthGuard)

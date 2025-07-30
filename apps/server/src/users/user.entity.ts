@@ -1,10 +1,10 @@
 import { Entity, PrimaryKey, Property } from "@mikro-orm/core";
-import { v4 } from "uuid";
+import { v7 } from "uuid";
 
 @Entity()
 export class User {
   @PrimaryKey()
-  uuid = v4();
+  uuid = v7();
 
   @Property()
   email!: string;
