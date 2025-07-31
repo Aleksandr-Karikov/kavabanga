@@ -1,6 +1,14 @@
 import { FastifyReply, FastifyRequest } from "fastify";
 import { AuthService } from "./auth.service";
-import { Controller, Get, Post, UseGuards, Res, Req } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  UseGuards,
+  Res,
+  Req,
+  LoggerService,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "./strategies/access-jwt-strategy/jwt-auth.guard";
 import { LocalAuthGuard } from "./strategies/local-strategy/local-auth.guard";
 import { RefreshAuthGuard } from "./strategies/refresh-strategy/refresh.guard";
@@ -10,16 +18,18 @@ import {
   ApiOperation,
   ApiResponse,
 } from "@nestjs/swagger";
-import { RefreshUser } from "src/auth/strategies/refresh-strategy/refresh.strategy";
+import { RefreshUser } from "./auth.types";
 import { ConfigService } from "@nestjs/config";
 
 @Controller("auth")
 export class AuthController {
   private readonly REFRESH_COOKIE_NAME = "refreshToken";
   private readonly REFRESH_TOKEN_TTL_DAYS;
+
   constructor(
     private authService: AuthService,
-    configService: ConfigService
+    configService: ConfigService,
+    private logger: LoggerService
   ) {
     this.REFRESH_TOKEN_TTL_DAYS = configService.get<number>(
       "REFRESH_TOKEN_TTL_DAYS"
@@ -128,12 +138,19 @@ export class AuthController {
     res.send({ accessToken });
   }
 
+  @UseGuards(RefreshAuthGuard)
   @Post("logout")
   async logout(@Req() req, @Res() res: FastifyReply) {
     const refreshToken = req.cookies?.[this.REFRESH_COOKIE_NAME];
-    if (refreshToken) await this.authService.logout(refreshToken);
-    res.clearCookie(this.REFRESH_COOKIE_NAME);
-    res.send({ ok: true });
+    try {
+      if (refreshToken)
+        await this.authService.logout(refreshToken, req.user.user.uuid);
+    } catch (e) {
+      this.logger.error(`Logout failed: ${e.message}`, e.stack);
+    } finally {
+      res.clearCookie(this.REFRESH_COOKIE_NAME);
+      res.send({ ok: true });
+    }
   }
 
   @UseGuards(JwtAuthGuard)

@@ -19,17 +19,14 @@ export class AuthService {
     pass: string
   ): Promise<Omit<User, "password">> {
     const user = await this.usersService.findByUsername(username);
-    if (user) {
-      const isCorrectPassword = bcrypt.compareSync(pass, user.password);
-      if (isCorrectPassword) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { password, ...result } = user;
-        return result;
-      } else {
-        return null;
-      }
+
+    if (!user || !bcrypt.compareSync(pass, user.password)) {
+      return null;
     }
-    return null;
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password, ...result } = user;
+    return result;
   }
 
   async validateUserByUserName(userName: string): Promise<User | null> {
@@ -41,13 +38,13 @@ export class AuthService {
     user: User,
     deviceId?: string
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    await this.tokenStore.markUsed(oldToken);
+    await this.tokenStore.markUsed(oldToken, user.uuid);
 
     return this.login(user, deviceId);
   }
 
-  async logout(refreshToken: string) {
-    await this.tokenStore.delete(refreshToken);
+  async logout(refreshToken: string, userUuid: User["uuid"]) {
+    await this.tokenStore.delete(refreshToken, userUuid);
   }
 
   async login(user: User, deviceId?: string) {
@@ -60,7 +57,6 @@ export class AuthService {
     await this.tokenStore.save(refreshToken, {
       userId: user.uuid,
       deviceId: resolvedDeviceId,
-      issuedAt: Date.now(),
     });
 
     return {

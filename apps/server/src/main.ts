@@ -10,6 +10,7 @@ import { ConfigService } from "@nestjs/config";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { FastifyStaticOptions } from "@fastify/static";
 import { join } from "node:path";
+import { AllExceptionsFilter } from "src/common/http-exception.filter.js";
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -28,6 +29,8 @@ async function bootstrap() {
     root: join(__dirname, "..", "public"),
     prefix: "/public/",
   });
+
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   const config = new DocumentBuilder()
     .setTitle("Kavabanga API")
