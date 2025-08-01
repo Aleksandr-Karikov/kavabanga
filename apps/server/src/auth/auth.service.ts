@@ -4,7 +4,7 @@ import { User } from "src/users/user.entity";
 import { UsersService } from "src/users/users.service";
 import * as bcrypt from "bcrypt";
 import { v7 } from "uuid";
-import { RefreshTokenStore } from "src/auth/refresh-token.store";
+import { RefreshTokenStore } from "./refresh-token-store/refresh-token.store";
 import crypto from "crypto";
 @Injectable()
 export class AuthService {

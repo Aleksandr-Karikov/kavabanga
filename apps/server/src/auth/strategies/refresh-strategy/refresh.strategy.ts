@@ -3,7 +3,7 @@ import { PassportStrategy } from "@nestjs/passport";
 import { FastifyRequest } from "fastify";
 import { Strategy } from "passport-custom";
 import { RefreshUser } from "src/auth/auth.types";
-import { RefreshTokenStore } from "src/auth/refresh-token.store";
+import { RefreshTokenStore } from "src/auth/refresh-token-store/refresh-token.store";
 import { UsersService } from "src/users/users.service";
 
 @Injectable()

@@ -31,7 +31,7 @@ import { RedisModule } from "@nestjs-modules/ioredis";
     RedisModule.forRootAsync({
       useFactory: (configService: ConfigService) => ({
         type: "single",
-        url: configService.get<string>("REDIS_URL"),
+        url: configService.get<string>("REDIS_URL", "redis://127.0.0.1:6379"),
       }),
       inject: [ConfigService],
       imports: [ConfigService],

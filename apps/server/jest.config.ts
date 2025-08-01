@@ -1,3 +1,3 @@
-import { config } from "@repo/jest-config/nest.js";
+import { config } from "@repo/jest-config/nest";
 
 export default config;
