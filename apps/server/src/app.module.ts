@@ -6,6 +6,7 @@ import { Module } from "@nestjs/common";
 import { join } from "path";
 import { AuthModule } from "./auth/auth.module";
 import { UsersModule } from "./users/users.module";
+import { MetricsModule } from "./metrics/metrics.module";
 import { RedisModule } from "@nestjs-modules/ioredis";
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { RedisModule } from "@nestjs-modules/ioredis";
       inject: [ConfigService],
       imports: [ConfigService],
     }),
+    MetricsModule,
     AuthModule,
     UsersModule,
   ],
