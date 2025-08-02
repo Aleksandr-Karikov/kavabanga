@@ -8,6 +8,7 @@ import { JwtStrategy } from "./strategies/access-jwt-strategy/jwt.strategy";
 import { LocalStrategy } from "./strategies/local-strategy/local.strategy";
 import { RefreshStrategy } from "./strategies/refresh-strategy/refresh.strategy";
 import { ConfigService } from "@nestjs/config";
+import { ScheduleModule } from "@nestjs/schedule";
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { ConfigService } from "@nestjs/config";
         };
       },
     }),
+    ScheduleModule.forRoot(),
   ],
   providers: [AuthService, LocalStrategy, JwtStrategy, RefreshStrategy],
   controllers: [AuthController],

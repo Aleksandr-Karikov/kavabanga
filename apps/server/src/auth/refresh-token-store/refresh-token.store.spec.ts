@@ -883,15 +883,13 @@ describe("RefreshTokenStore Integration", () => {
       expect(data3).not.toBeNull();
     });
 
-    it("handles Redis pipeline failure", async () => {
-      const originalPipeline = redis.pipeline;
-      const mockPipeline = {
-        set: jest.fn().mockReturnThis(),
-        sadd: jest.fn().mockReturnThis(),
-        exec: jest.fn().mockRejectedValue(new Error("Pipeline failed")),
-      };
+    it("handles Redis operation failure", async () => {
+      const extendedRedis = redis as ExtendedRedis;
+      const originalSaveBatchTokens = extendedRedis.saveBatchTokens;
 
-      redis.pipeline = jest.fn().mockReturnValue(mockPipeline);
+      extendedRedis.saveBatchTokens = jest
+        .fn()
+        .mockRejectedValue(new Error("Redis operation failed"));
 
       const tokens = [
         {
@@ -904,7 +902,7 @@ describe("RefreshTokenStore Integration", () => {
         TokenOperationFailedError
       );
 
-      redis.pipeline = originalPipeline;
+      extendedRedis.saveBatchTokens = originalSaveBatchTokens;
     });
 
     it("correctly updates user tokens sets", async () => {
@@ -1034,15 +1032,19 @@ describe("RefreshTokenStore Integration", () => {
     it("handles corrupted token data gracefully", async () => {
       await service.save("good-token", sampleData);
 
-      // Добавляем поврежденный токен в set
       const userTokensKey = `user_tokens:${USER_ID}`;
       await redis.set("refresh:corrupted-token", "invalid-json");
       await redis.sadd(userTokensKey, "refresh:corrupted-token");
 
       const stats = await service.getUserTokenStats(USER_ID);
 
-      expect(stats.activeTokens).toBe(2); // good + corrupted
+      expect(stats.activeTokens).toBe(1);
+      expect(stats.totalTokens).toBe(1);
       expect(stats.deviceCount).toBe(1);
+
+      const remainingTokens = await redis.smembers(userTokensKey);
+      expect(remainingTokens).not.toContain("refresh:corrupted-token");
+      expect(remainingTokens).toContain("refresh:good-token");
     });
 
     it("correctly counts unique devices", async () => {
@@ -1073,14 +1075,20 @@ describe("RefreshTokenStore Integration", () => {
     });
 
     it("handles Redis operation failure", async () => {
-      const originalScard = redis.scard;
-      redis.scard = jest.fn().mockRejectedValue(new Error("Redis failure"));
+      const extendedRedis = redis as ExtendedRedis;
+      const originalGetUserTokenStatsOptimized =
+        extendedRedis.getUserTokenStatsOptimized;
+
+      extendedRedis.getUserTokenStatsOptimized = jest
+        .fn()
+        .mockRejectedValue(new Error("Redis failure"));
 
       await expect(service.getUserTokenStats(USER_ID)).rejects.toThrow(
         TokenOperationFailedError
       );
 
-      redis.scard = originalScard;
+      extendedRedis.getUserTokenStatsOptimized =
+        originalGetUserTokenStatsOptimized;
     });
   });
 

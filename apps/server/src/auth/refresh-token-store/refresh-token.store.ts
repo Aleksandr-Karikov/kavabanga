@@ -1,5 +1,11 @@
-import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { Cron, CronExpression } from "@nestjs/schedule";
 import { Redis } from "ioredis";
 import * as Joi from "joi";
 
@@ -38,11 +44,14 @@ type LuaCommand<Args extends unknown[], Result> = (
 
 export interface ExtendedRedis extends Redis {
   saveToken: LuaCommand<[string, string, string, number, string], number>;
+  saveBatchTokens: LuaCommand<[string, ...string[]], number>;
   markTokenUsed: LuaCommand<[string, string, string, number], number>;
   deleteToken: LuaCommand<[string, string, string], number>;
   revokeAllTokens: LuaCommand<[string], number>;
   revokeDeviceTokens: LuaCommand<[string, string], number>;
   cleanupOrphanedTokens: LuaCommand<[string], number>;
+  cleanupExpiredTokens: LuaCommand<[string], number>;
+  getUserTokenStatsOptimized: LuaCommand<[string], [number, number, string[]]>;
 }
 
 const RefreshTokenDataSchema = Joi.object({
@@ -52,20 +61,20 @@ const RefreshTokenDataSchema = Joi.object({
   used: Joi.boolean().required(),
 });
 
-// Схема для входных данных при создании токена
 const CreateTokenDataSchema = Joi.object({
   userId: Joi.string().min(1).max(255).required(),
   deviceId: Joi.string().min(1).max(255).required(),
 });
 
 @Injectable()
-export class RefreshTokenStore implements OnModuleInit {
+export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RefreshTokenStore.name);
   private readonly ttlSeconds: number;
   private readonly usedTokenTtlSeconds: number;
   private readonly refreshTokenRedisPrefix = "refresh";
   private readonly userTokensPrefix: string;
   private readonly maxTokenLength: number;
+  private readonly enableScheduledCleanup: boolean;
 
   constructor(
     private readonly redis: Redis,
@@ -100,16 +109,98 @@ export class RefreshTokenStore implements OnModuleInit {
 
     this.maxTokenLength = configService.get<number>("MAX_TOKEN_LENGTH", 1000);
 
+    this.enableScheduledCleanup = configService.get<boolean>(
+      "ENABLE_TOKEN_CLEANUP",
+      true
+    );
+
     this.ttlSeconds = 60 * 60 * 24 * refreshTokenTtlDays;
     this.usedTokenTtlSeconds = 60 * usedTokenTtlMinutes;
 
     this.logger.log(
-      `Initialized with TTL: ${refreshTokenTtlDays} days, Used TTL: ${usedTokenTtlMinutes} minutes`
+      `Initialized with TTL: ${refreshTokenTtlDays} days, Used TTL: ${usedTokenTtlMinutes} minutes, Scheduled cleanup: ${this.enableScheduledCleanup ? "enabled" : "disabled"}`
     );
   }
 
   async onModuleInit() {
     await this.initializeScripts();
+
+    if (this.enableScheduledCleanup) {
+      this.logger.log(
+        "Scheduled cleanup is enabled. Will run every hour at minute 0."
+      );
+    } else {
+      this.logger.log("Scheduled cleanup is disabled.");
+    }
+  }
+
+  async onModuleDestroy() {
+    this.logger.log("RefreshTokenStore module destroying...");
+  }
+
+  /**
+   * Scheduled cleanup job - runs every hour at minute 0
+   */
+  @Cron(CronExpression.EVERY_HOUR, {
+    name: "refresh-token-cleanup",
+    timeZone: "UTC",
+  })
+  async scheduledCleanup(): Promise<void> {
+    if (!this.enableScheduledCleanup) {
+      return;
+    }
+
+    this.logger.debug("Starting scheduled token cleanup...");
+
+    try {
+      const cleanedCount = await this.performGlobalCleanup();
+
+      if (cleanedCount > 0) {
+        this.logger.log(
+          `Scheduled cleanup completed: ${cleanedCount} expired tokens removed`
+        );
+      } else {
+        this.logger.debug(
+          "Scheduled cleanup completed: no expired tokens found"
+        );
+      }
+    } catch (error) {
+      this.logger.error("Scheduled cleanup failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  async performGlobalCleanup(): Promise<number> {
+    try {
+      const pattern = `${this.userTokensPrefix}:*`;
+      const userTokenKeys = await this.redis.keys(pattern);
+
+      let totalCleaned = 0;
+
+      const pipeline = this.redis.pipeline();
+
+      for (const userTokenKey of userTokenKeys) {
+        pipeline.eval(this.CLEANUP_EXPIRED_SCRIPT, 1, userTokenKey);
+      }
+
+      const results = await pipeline.exec();
+
+      if (results) {
+        for (const [err, result] of results) {
+          if (!err && typeof result === "number") {
+            totalCleaned += result;
+          }
+        }
+      }
+
+      return totalCleaned;
+    } catch (error) {
+      this.logger.error("Global cleanup failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw new TokenOperationFailedError("Global cleanup failed", { error });
+    }
   }
 
   /**
@@ -121,6 +212,11 @@ export class RefreshTokenStore implements OnModuleInit {
     redis.defineCommand("saveToken", {
       numberOfKeys: 3,
       lua: this.SAVE_SCRIPT,
+    });
+
+    redis.defineCommand("saveBatchTokens", {
+      numberOfKeys: 1,
+      lua: this.SAVE_BATCH_SCRIPT,
     });
 
     redis.defineCommand("markTokenUsed", {
@@ -146,6 +242,16 @@ export class RefreshTokenStore implements OnModuleInit {
     redis.defineCommand("cleanupOrphanedTokens", {
       numberOfKeys: 1,
       lua: this.CLEANUP_ORPHANED_SCRIPT,
+    });
+
+    redis.defineCommand("cleanupExpiredTokens", {
+      numberOfKeys: 1,
+      lua: this.CLEANUP_EXPIRED_SCRIPT,
+    });
+
+    redis.defineCommand("getUserTokenStatsOptimized", {
+      numberOfKeys: 1,
+      lua: this.GET_USER_STATS_SCRIPT,
     });
 
     this.logger.log("Lua scripts initialized successfully");
@@ -233,7 +339,7 @@ export class RefreshTokenStore implements OnModuleInit {
    * @throws TokenValidationError if data is invalid
    */
   async getTokenData(token: string): Promise<RefreshTokenData | null> {
-    if (!token || !token.trim()) {
+    if (!token?.trim()) {
       return null;
     }
 
@@ -247,7 +353,7 @@ export class RefreshTokenStore implements OnModuleInit {
       return parsedData;
     } catch (error) {
       this.logger.error("Invalid token data format", {
-        token: token.substring(0, 10) + "...", // не логируем полный токен
+        token: token.substring(0, 10) + "...",
         error: error instanceof Error ? error.message : String(error),
         raw: raw.substring(0, 100) + "...",
       });
@@ -313,6 +419,7 @@ export class RefreshTokenStore implements OnModuleInit {
           token: token.substring(0, 10) + "...",
         });
       }
+
       this.logger.error("Failed to save token", {
         error: error instanceof Error ? error.message : String(error),
         userId: data.userId,
@@ -339,70 +446,56 @@ export class RefreshTokenStore implements OnModuleInit {
       return 0;
     }
 
-    const pipeline = this.redis.pipeline();
-    const userTokenUpdates = new Map<string, string[]>();
-    const validTokens = [];
+    const userGroups = new Map<string, typeof tokens>();
 
-    for (const { token, data } of tokens) {
+    for (const tokenData of tokens) {
       try {
-        this.validateToken(token);
-        this.validateCreateTokenData(data);
+        this.validateToken(tokenData.token);
+        this.validateCreateTokenData(tokenData.data);
 
-        const fullData: RefreshTokenData = {
-          ...data,
-          issuedAt: Date.now(),
-          used: false,
-        };
-
-        const key = this.getKey(token);
-        const userTokensKey = this.getUserTokensKey(data.userId);
-
-        pipeline.set(
-          key,
-          JSON.stringify(fullData),
-          "EX",
-          this.ttlSeconds,
-          "NX"
-        );
-
-        if (!userTokenUpdates.has(userTokensKey)) {
-          userTokenUpdates.set(userTokensKey, []);
+        const userId = tokenData.data.userId;
+        if (!userGroups.has(userId)) {
+          userGroups.set(userId, []);
         }
-        userTokenUpdates.get(userTokensKey).push(key);
-
-        validTokens.push({ token, key });
+        userGroups.get(userId)?.push(tokenData);
       } catch (error) {
         this.logger.warn("Skipping invalid token in batch", {
-          token: token.substring(0, 10) + "...",
+          token: tokenData.token.substring(0, 10) + "...",
           error: error instanceof Error ? error.message : String(error),
         });
       }
     }
 
-    for (const [userTokensKey, tokenKeys] of userTokenUpdates) {
-      pipeline.sadd(userTokensKey, ...tokenKeys);
-    }
+    let totalSuccessful = 0;
 
     try {
-      const results = await pipeline.exec();
+      for (const [userId, userTokens] of userGroups) {
+        const userTokensKey = this.getUserTokensKey(userId);
+        const args: string[] = [userTokensKey];
 
-      if (!results) {
-        throw new Error("Pipeline execution returned null");
-      }
+        for (const { token, data } of userTokens) {
+          const fullData: RefreshTokenData = {
+            ...data,
+            issuedAt: Date.now(),
+            used: false,
+          };
 
-      let successfulSets = 0;
-      for (let i = 0; i < validTokens.length; i++) {
-        const [err, result] = results[i];
-        if (!err && result === "OK") {
-          successfulSets++;
+          const key = this.getKey(token);
+          args.push(key, JSON.stringify(fullData), this.ttlSeconds.toString());
         }
+
+        const result = await this.redisTyped.saveBatchTokens(
+          userTokensKey,
+          ...args
+        );
+        totalSuccessful += result;
       }
 
       this.logger.log(
-        `Batch save completed: ${successfulSets}/${tokens.length} tokens saved`
+        `Batch save completed: ${totalSuccessful}/${tokens.length} tokens saved`
       );
 
-      return successfulSets;
+      return totalSuccessful;
     } catch (error) {
       this.logger.error("Batch save failed", {
         error: error instanceof Error ? error.message : String(error),
@@ -611,7 +704,6 @@ export class RefreshTokenStore implements OnModuleInit {
    * @param userId - User ID
    * @returns Token statistics
    */
-
   async getUserTokenStats(userId: string): Promise<TokenStats> {
     if (!userId?.trim()) {
       return {
@@ -623,29 +715,13 @@ export class RefreshTokenStore implements OnModuleInit {
 
     try {
       const userTokensKey = this.getUserTokensKey(userId);
-      const activeTokens = await this.redis.scard(userTokensKey);
-
-      const tokenKeys = await this.redis.smembers(userTokensKey);
-      const devices = new Set<string>();
-
-      for (const tokenKey of tokenKeys) {
-        const data = await this.redis.get(tokenKey);
-        if (data) {
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.deviceId) {
-              devices.add(parsed.deviceId);
-            }
-          } catch {
-            /* empty */
-          }
-        }
-      }
+      const [activeTokens, totalTokens, deviceIds] =
+        await this.redisTyped.getUserTokenStatsOptimized(userTokensKey);
 
       return {
         activeTokens,
-        totalTokens: activeTokens, // В текущей реализации равны
-        deviceCount: devices.size,
+        totalTokens,
+        deviceCount: deviceIds.length,
       };
     } catch (error) {
       this.logger.error("Failed to get user token stats", {
@@ -658,6 +734,8 @@ export class RefreshTokenStore implements OnModuleInit {
       });
     }
   }
+
+  // ===================== LUA SCRIPTS =====================
 
   /**
    * Lua script to save a new token
@@ -689,6 +767,31 @@ export class RefreshTokenStore implements OnModuleInit {
     -- Add to user's set
     redis.call('SADD', userTokensKey, key)
     return 1
+  `;
+
+  /**
+   * Improved atomic batch save Lua script
+   */
+  private readonly SAVE_BATCH_SCRIPT = `
+    local userTokensKey = KEYS[1]
+    local saved = 0
+    
+    -- Process tokens in groups of 3 (key, data, ttl)
+    for i = 2, #ARGV, 3 do
+      local key = ARGV[i]
+      local data = ARGV[i + 1]
+      local ttl = ARGV[i + 2]
+      
+      if key and data and ttl then
+        local result = redis.call('SET', key, data, 'EX', ttl, 'NX')
+        if result then
+          redis.call('SADD', userTokensKey, key)
+          saved = saved + 1
+        end
+      end
+    end
+    
+    return saved
   `;
 
   /**
@@ -796,5 +899,71 @@ export class RefreshTokenStore implements OnModuleInit {
       end
     end
     return cleaned
+  `;
+
+  /**
+   * NEW: Lua script для очистки истекших токенов
+   */
+  private readonly CLEANUP_EXPIRED_SCRIPT = `
+    local userTokensKey = KEYS[1]
+    local tokens = redis.call('SMEMBERS', userTokensKey)
+    local cleaned = 0
+
+    for _, key in ipairs(tokens) do
+      local ttl = redis.call('TTL', key)
+      if ttl == -2 then  -- Key doesn't exist
+        redis.call('SREM', userTokensKey, key)
+        cleaned = cleaned + 1
+      elseif ttl == -1 then  -- Key exists but has no TTL (shouldn't happen)
+        redis.call('DEL', key)
+        redis.call('SREM', userTokensKey, key)
+        cleaned = cleaned + 1
+      end
+    end
+    return cleaned
+  `;
+
+  private readonly GET_USER_STATS_SCRIPT = `
+    local userTokensKey = KEYS[1]
+    local tokens = redis.call('SMEMBERS', userTokensKey)
+    local activeTokens = 0
+    local totalTokens = 0
+    local deviceSet = {}
+    local orphanedKeys = {}
+  
+    for _, key in ipairs(tokens) do
+      local data = redis.call('GET', key)
+      if data then
+        local ok, parsed = pcall(cjson.decode, data)
+        if ok and parsed.userId and parsed.deviceId then
+          totalTokens = totalTokens + 1
+          if not parsed.used then
+            activeTokens = activeTokens + 1
+          end
+          if not deviceSet[parsed.deviceId] then
+            deviceSet[parsed.deviceId] = true
+          end
+        else
+          -- Поврежденные данные - помечаем ключ для удаления
+          table.insert(orphanedKeys, key)
+        end
+      else
+        -- Несуществующий токен - помечаем ключ для удаления
+        table.insert(orphanedKeys, key)
+      end
+    end
+  
+    -- Удаляем orphaned/поврежденные ключи из набора
+    for _, orphanedKey in ipairs(orphanedKeys) do
+      redis.call('SREM', userTokensKey, orphanedKey)
+    end
+  
+    -- Собираем список устройств
+    local devices = {}
+    for deviceId, _ in pairs(deviceSet) do
+      table.insert(devices, deviceId)
+    end
+  
+    return {activeTokens, totalTokens, devices}
   `;
 }
