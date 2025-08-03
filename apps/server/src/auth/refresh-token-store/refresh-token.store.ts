@@ -49,7 +49,6 @@ export interface ExtendedRedis extends Redis {
   deleteToken: LuaCommand<[string, string, string], number>;
   revokeAllTokens: LuaCommand<[string], number>;
   revokeDeviceTokens: LuaCommand<[string, string], number>;
-  cleanupOrphanedTokens: LuaCommand<[string], number>;
   cleanupExpiredTokens: LuaCommand<[string], number>;
   getUserTokenStatsOptimized: LuaCommand<[string], [number, number, string[]]>;
 }
@@ -73,8 +72,10 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
   private readonly usedTokenTtlSeconds: number;
   private readonly refreshTokenRedisPrefix = "refresh";
   private readonly userTokensPrefix: string;
-  private readonly maxTokenLength: number;
+  private readonly maxTokenLength: number = 1000;
+  private readonly maxDevicesPerUser = 10;
   private readonly enableScheduledCleanup: boolean;
+  private readonly maxBatchSize: number = 100;
 
   constructor(
     private readonly redis: Redis,
@@ -106,8 +107,6 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
       "REDIS_USER_TOKENS_PREFIX",
       "user_tokens"
     );
-
-    this.maxTokenLength = configService.get<number>("MAX_TOKEN_LENGTH", 1000);
 
     this.enableScheduledCleanup = configService.get<boolean>(
       "ENABLE_TOKEN_CLEANUP",
@@ -147,6 +146,7 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
   })
   async scheduledCleanup(): Promise<void> {
     if (!this.enableScheduledCleanup) {
+      this.logger.debug("Global cleanup is disabled by configuration");
       return;
     }
 
@@ -172,35 +172,55 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
   }
 
   async performGlobalCleanup(): Promise<number> {
-    try {
-      const pattern = `${this.userTokensPrefix}:*`;
-      const userTokenKeys = await this.redis.keys(pattern);
+    let cursor = "0";
+    let totalCleaned = 0;
+    const BATCH_SIZE = 200;
 
-      let totalCleaned = 0;
+    do {
+      const [nextCursor, keys] = await this.redis.scan(
+        cursor,
+        "MATCH",
+        `${this.userTokensPrefix}:*`,
+        "COUNT",
+        BATCH_SIZE
+      );
+
+      cursor = nextCursor;
+
+      if (keys.length === 0) {
+        continue;
+      }
 
       const pipeline = this.redis.pipeline();
 
-      for (const userTokenKey of userTokenKeys) {
-        pipeline.eval(this.CLEANUP_EXPIRED_SCRIPT, 1, userTokenKey);
+      for (const userTokenKey of keys) {
+        const userId = userTokenKey.split(":")[1];
+
+        pipeline.eval(
+          this.CLEANUP_EXPIRED_SCRIPT,
+          1,
+          userTokenKey,
+          userId,
+          this.refreshTokenRedisPrefix
+        );
       }
 
       const results = await pipeline.exec();
 
-      if (results) {
-        for (const [err, result] of results) {
-          if (!err && typeof result === "number") {
-            totalCleaned += result;
-          }
+      for (const [error, cleanedCount] of results || []) {
+        if (error) {
+          this.logger.error(`Cleanup error: ${error.message}`);
+          continue;
         }
+        totalCleaned += Number(cleanedCount) || 0;
       }
 
-      return totalCleaned;
-    } catch (error) {
-      this.logger.error("Global cleanup failed", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw new TokenOperationFailedError("Global cleanup failed", { error });
-    }
+      this.logger.debug(
+        `Processed batch: ${keys.length} users, cleaned: ${totalCleaned}`
+      );
+    } while (cursor !== "0");
+
+    return totalCleaned;
   }
 
   /**
@@ -237,11 +257,6 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
     redis.defineCommand("revokeDeviceTokens", {
       numberOfKeys: 2,
       lua: this.REVOKE_DEVICE_SCRIPT,
-    });
-
-    redis.defineCommand("cleanupOrphanedTokens", {
-      numberOfKeys: 1,
-      lua: this.CLEANUP_ORPHANED_SCRIPT,
     });
 
     redis.defineCommand("cleanupExpiredTokens", {
@@ -383,6 +398,15 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
     this.validateToken(token);
     this.validateCreateTokenData(data);
 
+    const stats = await this.getUserTokenStats(data.userId);
+
+    if (stats.deviceCount >= this.maxDevicesPerUser) {
+      throw new TokenOperationFailedError(
+        `Device limit reached: ${this.maxDevicesPerUser}`,
+        { userId: data.userId }
+      );
+    }
+
     const fullData: RefreshTokenData = {
       ...data,
       issuedAt: Date.now(),
@@ -444,6 +468,9 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
   ): Promise<number> {
     if (!tokens || tokens.length === 0) {
       return 0;
+    }
+    if (tokens.length > this.maxBatchSize) {
+      throw new Error(`Batch size exceeded limit: ${this.maxBatchSize}`);
     }
 
     const userGroups = new Map<string, typeof tokens>();
@@ -665,41 +692,6 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Очищает orphaned записи в user tokens sets
-   * @param userId - User ID для очистки
-   * @returns Количество очищенных записей
-   */
-  async cleanupOrphanedTokens(userId: string): Promise<number> {
-    if (!userId?.trim()) {
-      return 0;
-    }
-
-    const userTokensKey = this.getUserTokensKey(userId);
-
-    try {
-      const result = await this.redisTyped.cleanupOrphanedTokens(userTokensKey);
-
-      if (result > 0) {
-        this.logger.log("Orphaned tokens cleaned up", {
-          userId,
-          cleanedCount: result,
-        });
-      }
-
-      return result;
-    } catch (error) {
-      this.logger.error("Failed to cleanup orphaned tokens", {
-        error: error instanceof Error ? error.message : String(error),
-        userId,
-      });
-      throw new TokenOperationFailedError("Failed to cleanup orphaned tokens", {
-        userId,
-        error,
-      });
-    }
-  }
-
-  /**
    * Retrieves token statistics for a user
    * @param userId - User ID
    * @returns Token statistics
@@ -753,8 +745,8 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
     if not ok then
       return redis.error_reply("Invalid JSON data")
     end
-    
-    if parsedData.userId ~= userId then
+
+    if type(parsedData.userId) ~= "string" or parsedData.userId ~= userId then
       return redis.error_reply("User ID mismatch")
     end
     
@@ -884,26 +876,6 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
     return removed
   `;
 
-  /**
-   * Lua script для очистки orphaned токенов
-   */
-  private readonly CLEANUP_ORPHANED_SCRIPT = `
-    local userTokensKey = KEYS[1]
-    local tokens = redis.call('SMEMBERS', userTokensKey)
-    local cleaned = 0
-
-    for _, key in ipairs(tokens) do
-      if redis.call('EXISTS', key) == 0 then
-        redis.call('SREM', userTokensKey, key)
-        cleaned = cleaned + 1
-      end
-    end
-    return cleaned
-  `;
-
-  /**
-   * NEW: Lua script для очистки истекших токенов
-   */
   private readonly CLEANUP_EXPIRED_SCRIPT = `
     local userTokensKey = KEYS[1]
     local tokens = redis.call('SMEMBERS', userTokensKey)
@@ -944,21 +916,17 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
             deviceSet[parsed.deviceId] = true
           end
         else
-          -- Поврежденные данные - помечаем ключ для удаления
           table.insert(orphanedKeys, key)
         end
       else
-        -- Несуществующий токен - помечаем ключ для удаления
         table.insert(orphanedKeys, key)
       end
     end
   
-    -- Удаляем orphaned/поврежденные ключи из набора
     for _, orphanedKey in ipairs(orphanedKeys) do
       redis.call('SREM', userTokensKey, orphanedKey)
     end
   
-    -- Собираем список устройств
     local devices = {}
     for deviceId, _ in pairs(deviceSet) do
       table.insert(devices, deviceId)

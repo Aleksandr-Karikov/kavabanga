@@ -52,7 +52,6 @@ describe("RefreshTokenStore Integration", () => {
           REDIS_URL: "redis://127.0.0.1:6379",
           REFRESH_TOKEN_TTL_DAYS: 7,
           USED_TOKEN_TTL_MINUTES: 5,
-          MAX_TOKEN_LENGTH: 1000,
           REDIS_USER_TOKENS_PREFIX: "user_tokens",
         };
         return config[key];
@@ -101,7 +100,6 @@ describe("RefreshTokenStore Integration", () => {
       expect(typeof extendedRedis.deleteToken).toBe("function");
       expect(typeof extendedRedis.revokeAllTokens).toBe("function");
       expect(typeof extendedRedis.revokeDeviceTokens).toBe("function");
-      expect(typeof extendedRedis.cleanupOrphanedTokens).toBe("function");
     });
 
     it("should execute redis commands correctly", async () => {
@@ -931,56 +929,6 @@ describe("RefreshTokenStore Integration", () => {
     });
   });
 
-  describe("cleanupOrphanedTokens()", () => {
-    it("removes orphaned tokens from user set", async () => {
-      await service.save("token1", sampleData);
-      await service.save("token2", sampleData);
-
-      const userTokensKey = `user_tokens:${USER_ID}`;
-
-      await redis.del("refresh:token1");
-
-      const cleanedCount = await service.cleanupOrphanedTokens(USER_ID);
-      expect(cleanedCount).toBe(1);
-
-      const remainingTokens = await redis.smembers(userTokensKey);
-      expect(remainingTokens).not.toContain("refresh:token1");
-      expect(remainingTokens).toContain("refresh:token2");
-    });
-
-    it("returns 0 for empty userId", async () => {
-      const count1 = await service.cleanupOrphanedTokens("");
-      const count2 = await service.cleanupOrphanedTokens("   ");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const count3 = await service.cleanupOrphanedTokens(null as any);
-
-      expect(count1).toBe(0);
-      expect(count2).toBe(0);
-      expect(count3).toBe(0);
-    });
-
-    it("returns 0 when no orphaned tokens exist", async () => {
-      await service.save("token1", sampleData);
-      const cleanedCount = await service.cleanupOrphanedTokens(USER_ID);
-      expect(cleanedCount).toBe(0);
-    });
-
-    it("handles Redis operation failure", async () => {
-      const extendedRedis = redis as ExtendedRedis;
-      const originalCleanup = extendedRedis.cleanupOrphanedTokens;
-
-      extendedRedis.cleanupOrphanedTokens = jest
-        .fn()
-        .mockRejectedValue(new Error("Redis failure"));
-
-      await expect(service.cleanupOrphanedTokens(USER_ID)).rejects.toThrow(
-        TokenOperationFailedError
-      );
-
-      extendedRedis.cleanupOrphanedTokens = originalCleanup;
-    });
-  });
-
   describe("getUserTokenStats()", () => {
     it("returns correct stats for user with tokens", async () => {
       const user1Data = { userId: "stats-user-1", deviceId: "device-1" };
@@ -1101,7 +1049,6 @@ describe("RefreshTokenStore Integration", () => {
             if (key === "REFRESH_TOKEN_TTL_DAYS") return ttlDays;
             if (key === "USED_TOKEN_TTL_MINUTES") return 5;
             if (key === "REDIS_USER_TOKENS_PREFIX") return "user_tokens";
-            if (key === "MAX_TOKEN_LENGTH") return 1000;
             return defaultValue;
           }),
         };
@@ -1125,7 +1072,6 @@ describe("RefreshTokenStore Integration", () => {
             if (key === "REFRESH_TOKEN_TTL_DAYS") return 7;
             if (key === "USED_TOKEN_TTL_MINUTES") return ttlMinutes;
             if (key === "REDIS_USER_TOKENS_PREFIX") return "user_tokens";
-            if (key === "MAX_TOKEN_LENGTH") return 1000;
             return defaultValue;
           }),
         };
@@ -1148,7 +1094,6 @@ describe("RefreshTokenStore Integration", () => {
           if (key === "REFRESH_TOKEN_TTL_DAYS") return 30;
           if (key === "USED_TOKEN_TTL_MINUTES") return 15;
           if (key === "REDIS_USER_TOKENS_PREFIX") return "custom_tokens";
-          if (key === "MAX_TOKEN_LENGTH") return 2000;
           return defaultValue;
         }),
       };
