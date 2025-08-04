@@ -39,6 +39,12 @@ export interface TokenStats {
   deviceCount: number;
 }
 
+export interface TokenStatsOptions {
+  enableCaching?: boolean;
+  maxBatchSize?: number;
+  statsCacheTtl?: number;
+}
+
 export interface RefreshTokenStoreConfiguration {
   ttl: number;
   usedTokenTtl: number;
@@ -62,7 +68,10 @@ export interface ExtendedRedis extends Redis {
   revokeAllTokens: LuaCommand<[string], number>;
   revokeDeviceTokens: LuaCommand<[string, string], number>;
   cleanupExpiredTokens: LuaCommand<[string], number>;
-  getUserTokenStatsOptimized: LuaCommand<[string], [number, number, string[]]>;
+  getUserTokenStatsOptimized: LuaCommand<
+    [string, string?, string?, string?],
+    [number, number, string[]]
+  >;
 }
 
 const RefreshTokenDataSchema = Joi.object({
@@ -81,6 +90,11 @@ const CreateTokenDataSchema = Joi.object({
 export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RefreshTokenStore.name);
   private readonly configuration: RefreshTokenStoreConfiguration;
+  private readonly DEFAULT_STATS_OPTIONS: Required<TokenStatsOptions> = {
+    enableCaching: true,
+    maxBatchSize: 100,
+    statsCacheTtl: 300,
+  };
 
   constructor(
     @InjectRedis() private readonly redis: Redis,
@@ -450,6 +464,7 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
         userId: data.userId,
         deviceId: data.deviceId,
       });
+      await this.invalidateUserStatsCache(data.userId);
     } catch (error) {
       if (error instanceof Error && error.message.includes("already exists")) {
         throw new TokenAlreadyExistsError("Token already exists", {
@@ -581,6 +596,9 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
       if (success) {
         this.logger.debug("Token marked as used", { userId });
       }
+      if (success) {
+        await this.invalidateUserStatsCache(userId);
+      }
 
       return success;
     } catch (error) {
@@ -621,6 +639,9 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
       if (success) {
         this.logger.debug("Token deleted", { userId });
       }
+      if (success) {
+        await this.invalidateUserStatsCache(userId);
+      }
 
       return success;
     } catch (error) {
@@ -655,6 +676,10 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
         userId,
         revokedCount: result,
       });
+
+      if (result > 0) {
+        await this.invalidateUserStatsCache(userId);
+      }
 
       return result;
     } catch (error) {
@@ -694,7 +719,9 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
         deviceId,
         revokedCount: result,
       });
-
+      if (result > 0) {
+        await this.invalidateUserStatsCache(userId);
+      }
       return result;
     } catch (error) {
       this.logger.error("Failed to revoke device tokens", {
@@ -711,11 +738,94 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * invalidate user's cache
+   * @param userId - user id
+   */
+  async invalidateUserStatsCache(userId: string): Promise<void> {
+    if (!userId?.trim()) return;
+
+    try {
+      const statsKey = `${this.configuration.userTokensSetRedisPrefix}:stats:${userId}`;
+      await this.redis.del(statsKey);
+
+      this.logger.debug("User stats cache invalidated", { userId });
+    } catch (error) {
+      this.logger.warn("Failed to invalidate user stats cache", {
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * get statistic with forced update cache
+   * @param userId - user ID
+   * @param options - batching options
+   */
+  async getUserTokenStatsForced(
+    userId: string,
+    options: Omit<TokenStatsOptions, "enableCaching"> = {}
+  ): Promise<TokenStats> {
+    await this.invalidateUserStatsCache(userId);
+    return this.getUserTokenStats(userId, { ...options, enableCaching: true });
+  }
+
+  /**
+   * batch get statistic for some users
+   * @param userIds - user ids
+   * @param options - options to cache and batch
+   */
+  async getBatchUserTokenStats(
+    userIds: string[],
+    options: TokenStatsOptions = {}
+  ): Promise<Map<string, TokenStats>> {
+    const results = new Map<string, TokenStats>();
+
+    if (!userIds.length) return results;
+
+    const opts = { ...this.DEFAULT_STATS_OPTIONS, ...options };
+
+    const CONCURRENT_LIMIT = 10;
+
+    for (let i = 0; i < userIds.length; i += CONCURRENT_LIMIT) {
+      const batch = userIds.slice(i, i + CONCURRENT_LIMIT);
+
+      const promises = batch.map(async (userId) => {
+        try {
+          const stats = await this.getUserTokenStats(userId, opts);
+          return { userId, stats };
+        } catch (error) {
+          this.logger.warn("Failed to get stats for user in batch", {
+            userId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return {
+            userId,
+            stats: { activeTokens: 0, totalTokens: 0, deviceCount: 0 },
+          };
+        }
+      });
+
+      const batchResults = await Promise.all(promises);
+
+      for (const { userId, stats } of batchResults) {
+        results.set(userId, stats);
+      }
+    }
+
+    return results;
+  }
+
+  /**
    * Retrieves token statistics for a user
    * @param userId - User ID
+   * @param options - caching and batching options
    * @returns Token statistics
    */
-  async getUserTokenStats(userId: string): Promise<TokenStats> {
+  async getUserTokenStats(
+    userId: string,
+    options: TokenStatsOptions = {}
+  ): Promise<TokenStats> {
     if (!userId?.trim()) {
       return {
         activeTokens: 0,
@@ -724,20 +834,43 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
       };
     }
 
+    const opts = { ...this.DEFAULT_STATS_OPTIONS, ...options };
+
     try {
       const userTokensKey = this.getUserTokensKey(userId);
-      const [activeTokens, totalTokens, deviceIds] =
-        await this.redisTyped.getUserTokenStatsOptimized(userTokensKey);
+      const statsKey = opts.enableCaching
+        ? `${this.configuration.userTokensSetRedisPrefix}:stats:${userId}`
+        : "";
 
-      return {
+      const [activeTokens, totalTokens, deviceIds] =
+        await this.redisTyped.getUserTokenStatsOptimized(
+          userTokensKey,
+          opts.maxBatchSize.toString(),
+          statsKey,
+          opts.statsCacheTtl.toString()
+        );
+
+      const stats: TokenStats = {
         activeTokens,
         totalTokens,
         deviceCount: deviceIds.length,
       };
+
+      if (totalTokens > 200) {
+        this.logger.warn("User has excessive number of tokens", {
+          userId,
+          totalTokens,
+          activeTokens,
+          deviceCount: deviceIds.length,
+        });
+      }
+
+      return stats;
     } catch (error) {
       this.logger.error("Failed to get user token stats", {
         error: error instanceof Error ? error.message : String(error),
         userId,
+        options: opts,
       });
       throw new TokenOperationFailedError("Failed to get user token stats", {
         userId,
@@ -745,7 +878,6 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
       });
     }
   }
-
   // ===================== LUA SCRIPTS =====================
 
   /**
@@ -916,41 +1048,154 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
 
   private readonly GET_USER_STATS_SCRIPT = `
     local userTokensKey = KEYS[1]
-    local tokens = redis.call('SMEMBERS', userTokensKey)
-    local activeTokens = 0
-    local totalTokens = 0
-    local deviceSet = {}
-    local orphanedKeys = {}
-  
-    for _, key in ipairs(tokens) do
-      local data = redis.call('GET', key)
-      if data then
-        local ok, parsed = pcall(cjson.decode, data)
-        if ok and parsed.userId and parsed.deviceId then
-          totalTokens = totalTokens + 1
-          if not parsed.used then
-            activeTokens = activeTokens + 1
+    local maxBatchSize = tonumber(ARGV[1]) or 100
+    local statsKey = ARGV[2]
+    local statsTtl = tonumber(ARGV[3]) or 300
+
+    -- Проверяем кэшированную статистику если включена
+    if statsKey and statsKey ~= "" then
+      local cachedStats = redis.call('HMGET', statsKey, 'active', 'total', 'devices', 'lastUpdated')
+      if cachedStats[1] and cachedStats[2] and cachedStats[3] then
+        local lastUpdated = tonumber(cachedStats[4]) or 0
+        local currentTime = redis.call('TIME')[1]
+        
+        -- Если кэш не старше TTL, возвращаем кэшированные данные
+        if (currentTime - lastUpdated) < statsTtl then
+          local devices = {}
+          if cachedStats[3] and cachedStats[3] ~= "" then
+            -- Парсим устройства из строки (разделенные запятыми)
+            for device in string.gmatch(cachedStats[3], "([^,]+)") do
+              table.insert(devices, device)
+            end
           end
-          if not deviceSet[parsed.deviceId] then
-            deviceSet[parsed.deviceId] = true
-          end
-        else
-          table.insert(orphanedKeys, key)
+          return {tonumber(cachedStats[1]) or 0, tonumber(cachedStats[2]) or 0, devices}
         end
-      else
-        table.insert(orphanedKeys, key)
       end
     end
-  
-    for _, orphanedKey in ipairs(orphanedKeys) do
-      redis.call('SREM', userTokensKey, orphanedKey)
+
+    -- Получаем все токены пользователя
+    local tokens = redis.call('SMEMBERS', userTokensKey)
+    local tokenCount = #tokens
+
+    -- Если токенов нет, возвращаем нули
+    if tokenCount == 0 then
+      -- Кэшируем пустую статистику
+      if statsKey and statsKey ~= "" then
+        local currentTime = redis.call('TIME')[1]
+        redis.call('HMSET', statsKey, 
+          'active', '0', 
+          'total', '0', 
+          'devices', '', 
+          'lastUpdated', currentTime
+        )
+        redis.call('EXPIRE', statsKey, statsTtl)
+      end
+      return {0, 0, {}}
     end
-  
+
+    local activeTokens = 0
+    local totalTokens = 0
+    local deviceSet = {} -- Используем как Set для уникальных deviceId
+    local orphanedKeys = {}
+    local processedTokens = 0
+
+    -- Функция для обработки батча токенов
+    local function processBatch(tokenBatch)
+      if #tokenBatch == 0 then return end
+      
+      -- Используем MGET для получения всех данных токенов в батче
+      local dataArray = redis.call('MGET', unpack(tokenBatch))
+      
+      for i, data in ipairs(dataArray) do
+        local tokenKey = tokenBatch[i]
+        
+        if data then
+          -- Пытаемся распарсить JSON с защитой от ошибок
+          local ok, parsed = pcall(cjson.decode, data)
+          
+          if ok and type(parsed) == "table" and parsed.userId and parsed.deviceId then
+            totalTokens = totalTokens + 1
+            
+            -- Проверяем, не использован ли токен
+            if not parsed.used then
+              activeTokens = activeTokens + 1
+            end
+            
+            -- Добавляем устройство в Set (используем deviceId как ключ)
+            deviceSet[parsed.deviceId] = true
+          else
+            -- Помечаем как orphaned если данные невалидны
+            table.insert(orphanedKeys, tokenKey)
+          end
+        else
+          -- Помечаем как orphaned если данных нет
+          table.insert(orphanedKeys, tokenKey)
+        end
+      end
+    end
+
+    -- Обрабатываем токены батчами для предотвращения длительной блокировки
+    if tokenCount <= maxBatchSize then
+      -- Если токенов немного, обрабатываем все сразу
+      processBatch(tokens)
+    else
+      -- Разбиваем на батчи
+      local batchCount = math.ceil(tokenCount / maxBatchSize)
+      
+      for batchIndex = 1, batchCount do
+        local startIdx = (batchIndex - 1) * maxBatchSize + 1
+        local endIdx = math.min(batchIndex * maxBatchSize, tokenCount)
+        
+        local batch = {}
+        for i = startIdx, endIdx do
+          table.insert(batch, tokens[i])
+        end
+        
+        processBatch(batch)
+        processedTokens = processedTokens + #batch
+        
+        -- Проверяем лимит обработки для предотвращения слишком долгой блокировки
+        -- Если обрабатываем больше 500 токенов, возвращаем приблизительную статистику
+        if processedTokens >= 500 then
+          -- Экстраполируем результаты на основе обработанной части
+          local processed_ratio = processedTokens / tokenCount
+          activeTokens = math.floor(activeTokens / processed_ratio)
+          totalTokens = math.floor(totalTokens / processed_ratio)
+          break
+        end
+      end
+    end
+
+    -- Очищаем orphaned ключи из множества (пакетно для эффективности)
+    if #orphanedKeys > 0 then
+      -- Ограничиваем количество удалений за один раз
+      local maxCleanup = math.min(#orphanedKeys, 50)
+      for i = 1, maxCleanup do
+        redis.call('SREM', userTokensKey, orphanedKeys[i])
+      end
+    end
+
+    -- Преобразуем deviceSet в массив
     local devices = {}
     for deviceId, _ in pairs(deviceSet) do
       table.insert(devices, deviceId)
     end
-  
+
+    -- Кэшируем результаты если включено кэширование
+    if statsKey and statsKey ~= "" and processedTokens < 500 then
+      local currentTime = redis.call('TIME')[1]
+      local devicesString = table.concat(devices, ",")
+      
+      redis.call('HMSET', statsKey, 
+        'active', tostring(activeTokens), 
+        'total', tostring(totalTokens), 
+        'devices', devicesString,
+        'lastUpdated', currentTime
+      )
+      redis.call('EXPIRE', statsKey, statsTtl)
+    end
+
+    -- Возвращаем статистику
     return {activeTokens, totalTokens, devices}
-  `;
+    `;
 }

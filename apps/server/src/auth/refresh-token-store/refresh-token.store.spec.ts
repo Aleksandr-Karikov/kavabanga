@@ -919,7 +919,122 @@ describe("RefreshTokenStore Integration", () => {
     });
   });
 
-  describe("getUserTokenStats()", () => {
+  describe("Global cleanup functionality", () => {
+    it("performGlobalCleanup removes expired tokens", async () => {
+      // Create tokens for multiple users
+      const users = ["cleanup-user-1", "cleanup-user-2", "cleanup-user-3"];
+
+      for (const userId of users) {
+        await service.save(`${userId}-token-1`, {
+          userId,
+          deviceId: "device-1",
+        });
+        await service.save(`${userId}-token-2`, {
+          userId,
+          deviceId: "device-2",
+        });
+      }
+
+      // Manually expire some tokens and create orphaned references
+      await redis.del("refresh:cleanup-user-1-token-1");
+      await redis.del("refresh:cleanup-user-2-token-2");
+
+      // Add completely orphaned token reference
+      await redis.sadd(
+        "user_tokens:cleanup-user-3",
+        "refresh:nonexistent-token"
+      );
+
+      const cleanedCount = await service.performGlobalCleanup();
+
+      expect(cleanedCount).toBe(3); // 2 expired tokens + 1 orphaned reference
+
+      // Verify orphaned references were removed from sets
+      const user1Tokens = await redis.smembers("user_tokens:cleanup-user-1");
+      const user2Tokens = await redis.smembers("user_tokens:cleanup-user-2");
+      const user3Tokens = await redis.smembers("user_tokens:cleanup-user-3");
+
+      expect(user1Tokens).not.toContain("refresh:cleanup-user-1-token-1");
+      expect(user2Tokens).not.toContain("refresh:cleanup-user-2-token-2");
+      expect(user3Tokens).not.toContain("refresh:nonexistent-token");
+
+      // Valid tokens should remain
+      expect(user1Tokens).toContain("refresh:cleanup-user-1-token-2");
+      expect(user2Tokens).toContain("refresh:cleanup-user-2-token-1");
+    });
+
+    it("performGlobalCleanup handles large number of users efficiently", async () => {
+      const userCount = 50;
+
+      // Create tokens for many users
+      for (let i = 0; i < userCount; i++) {
+        const userId = `batch-cleanup-user-${i}`;
+        await service.save(`${userId}-token`, {
+          userId,
+          deviceId: "device-1",
+        });
+      }
+
+      // Expire tokens for half of the users
+      for (let i = 0; i < userCount / 2; i++) {
+        const userId = `batch-cleanup-user-${i}`;
+        await redis.del(`refresh:${userId}-token`);
+      }
+
+      const start = Date.now();
+      const cleanedCount = await service.performGlobalCleanup();
+      const duration = Date.now() - start;
+
+      expect(cleanedCount).toBe(userCount / 2);
+      expect(duration).toBeLessThan(3000); // Should be reasonably fast
+    }, 10000);
+
+    it("performGlobalCleanup returns 0 when no cleanup needed", async () => {
+      // Create valid tokens
+      await service.save("no-cleanup-token-1", {
+        userId: "no-cleanup-user",
+        deviceId: "device-1",
+      });
+
+      const cleanedCount = await service.performGlobalCleanup();
+      expect(cleanedCount).toBe(0);
+    });
+
+    it("performGlobalCleanup handles Redis errors gracefully", async () => {
+      // Create a user token set that will cause errors
+      await redis.sadd("user_tokens:error-user", "refresh:error-token");
+
+      // Mock Redis scan to return our error user
+      const originalScan = redis.scan;
+      let scanCallCount = 0;
+      redis.scan = jest.fn().mockImplementation(async (...args) => {
+        scanCallCount++;
+        if (scanCallCount === 1) {
+          return ["0", ["user_tokens:error-user"]];
+        }
+        return originalScan.call(redis, ...args);
+      });
+
+      // Mock pipeline exec to simulate error
+      const originalPipeline = redis.pipeline;
+      redis.pipeline = jest.fn().mockImplementation(() => {
+        const mockPipeline = {
+          eval: jest.fn().mockReturnThis(),
+          exec: jest
+            .fn()
+            .mockResolvedValue([[new Error("Simulated Redis error"), null]]),
+        };
+        return mockPipeline;
+      });
+
+      const cleanedCount = await service.performGlobalCleanup();
+
+      expect(cleanedCount).toBe(0); // Error should result in 0
+      redis.pipeline = originalPipeline;
+    });
+  });
+
+  describe("getUserTokenStats() with caching", () => {
     it("returns correct stats for user with tokens", async () => {
       const user1Data = { userId: "stats-user-1", deviceId: "device-1" };
       const user2Data = { userId: "stats-user-1", deviceId: "device-2" };
@@ -933,7 +1048,7 @@ describe("RefreshTokenStore Integration", () => {
 
       expect(stats.activeTokens).toBe(3);
       expect(stats.totalTokens).toBe(3);
-      expect(stats.deviceCount).toBe(2); // device-1 and device-2
+      expect(stats.deviceCount).toBe(2);
     });
 
     it("returns zeros for empty userId", async () => {
@@ -1027,6 +1142,274 @@ describe("RefreshTokenStore Integration", () => {
 
       extendedRedis.getUserTokenStatsOptimized =
         originalGetUserTokenStatsOptimized;
+    });
+  });
+  describe("Lua script optimization for stats", () => {
+    it("handles extremely large token counts with batching", async () => {
+      const largeUserId = "large-token-user";
+      const tokenCount = 600;
+
+      // Create many tokens
+      const tokens = [];
+      for (let i = 0; i < tokenCount; i++) {
+        tokens.push({
+          token: `large-token-${i}`,
+          data: {
+            userId: largeUserId,
+            deviceId: `device-${i % 50}`,
+          },
+        });
+      }
+
+      // Save in smaller batches to avoid timeout
+      const batchSize = 100;
+      for (let i = 0; i < tokens.length; i += batchSize) {
+        const batch = tokens.slice(i, i + batchSize);
+        await service.saveBatch(batch);
+      }
+
+      const start = Date.now();
+      const stats = await service.getUserTokenStats(largeUserId, {
+        maxBatchSize: 100, // Force batching
+      });
+      const duration = Date.now() - start;
+
+      // With large token count, Lua script should extrapolate or limit processing
+      expect(stats.totalTokens).toBeGreaterThan(0);
+      expect(stats.deviceCount).toBeGreaterThan(0);
+      expect(duration).toBeLessThan(3000); // Should not take too long
+    }, 20000);
+
+    it("correctly handles orphaned keys cleanup during stats", async () => {
+      await service.save("orphan-test-token", sampleData);
+
+      const userTokensKey = `user_tokens:${USER_ID}`;
+
+      // Add orphaned keys to user's token set
+      await redis.sadd(
+        userTokensKey,
+        "refresh:orphaned-1",
+        "refresh:orphaned-2"
+      );
+
+      const stats = await service.getUserTokenStats(USER_ID);
+
+      // Should clean up orphaned keys and return correct stats
+      expect(stats.totalTokens).toBe(1);
+      expect(stats.activeTokens).toBe(1);
+
+      // Verify orphaned keys were removed from set
+      const tokenSet = await redis.smembers(userTokensKey);
+      expect(tokenSet).not.toContain("refresh:orphaned-1");
+      expect(tokenSet).not.toContain("refresh:orphaned-2");
+      expect(tokenSet).toContain("refresh:orphan-test-token");
+    });
+
+    it("handles mixed valid and invalid token data", async () => {
+      await service.save("mixed-valid-1", sampleData);
+      await service.save("mixed-valid-2", {
+        userId: USER_ID,
+        deviceId: "device-2",
+      });
+
+      const userTokensKey = `user_tokens:${USER_ID}`;
+
+      // Add invalid token data
+      await redis.set("refresh:mixed-invalid-1", "not-json");
+      await redis.set(
+        "refresh:mixed-invalid-2",
+        JSON.stringify({
+          userId: USER_ID,
+          // missing deviceId
+          issuedAt: Date.now(),
+          used: false,
+        })
+      );
+
+      await redis.sadd(
+        userTokensKey,
+        "refresh:mixed-invalid-1",
+        "refresh:mixed-invalid-2"
+      );
+
+      const stats = await service.getUserTokenStats(USER_ID);
+
+      // Should only count valid tokens
+      expect(stats.totalTokens).toBe(2);
+      expect(stats.activeTokens).toBe(2);
+      expect(stats.deviceCount).toBe(2);
+
+      // Invalid tokens should be cleaned up
+      const tokenSet = await redis.smembers(userTokensKey);
+      expect(tokenSet).not.toContain("refresh:mixed-invalid-1");
+      expect(tokenSet).not.toContain("refresh:mixed-invalid-2");
+    });
+  });
+
+  describe("getUserTokenStatsForced()", () => {
+    it("forces cache refresh", async () => {
+      await service.save("forced-token", sampleData);
+
+      // Populate cache with old data
+      await service.getUserTokenStats(USER_ID, { enableCaching: true });
+
+      // Add token directly (bypassing cache invalidation)
+      await redis.set(
+        "refresh:direct-forced",
+        JSON.stringify({
+          userId: USER_ID,
+          deviceId: "direct-device",
+          issuedAt: Date.now(),
+          used: false,
+        })
+      );
+      await redis.sadd(`user_tokens:${USER_ID}`, "refresh:direct-forced");
+
+      // Force refresh should see the new token
+      const stats = await service.getUserTokenStatsForced(USER_ID);
+
+      expect(stats.totalTokens).toBe(2);
+      expect(stats.deviceCount).toBe(2);
+    });
+
+    it("invalidates cache before getting stats", async () => {
+      await service.save("cache-invalidate-token", sampleData);
+
+      // Create cache
+      const cacheKey = `user_tokens:stats:${USER_ID}`;
+      await redis.hmset(cacheKey, {
+        active: "999",
+        total: "999",
+        devices: "fake-device",
+        lastUpdated: Date.now().toString(),
+      });
+
+      const cacheExistsBefore = await redis.exists(cacheKey);
+      expect(cacheExistsBefore).toBe(1);
+
+      const stats = await service.getUserTokenStatsForced(USER_ID);
+
+      expect(stats.totalTokens).toBe(1); // Real data, not cached
+      expect(stats.activeTokens).toBe(1);
+    });
+  });
+  describe("Cache invalidation", () => {
+    it("invalidates cache on token save", async () => {
+      // Create initial cache
+      await service.getUserTokenStats(USER_ID, { enableCaching: true });
+
+      const cacheKey = `user_tokens:stats:${USER_ID}`;
+      let cacheExists = await redis.exists(cacheKey);
+      expect(cacheExists).toBe(1);
+
+      // Save new token should invalidate cache
+      await service.save("invalidate-save-token", sampleData);
+
+      cacheExists = await redis.exists(cacheKey);
+      expect(cacheExists).toBe(0);
+    });
+
+    it("invalidates cache on token mark used", async () => {
+      await service.save("invalidate-mark-token", sampleData);
+
+      // Create cache
+      await service.getUserTokenStats(USER_ID, { enableCaching: true });
+
+      const cacheKey = `user_tokens:stats:${USER_ID}`;
+      let cacheExists = await redis.exists(cacheKey);
+      expect(cacheExists).toBe(1);
+
+      // Mark used should invalidate cache
+      await service.markUsed("invalidate-mark-token", USER_ID);
+
+      cacheExists = await redis.exists(cacheKey);
+      expect(cacheExists).toBe(0);
+    });
+
+    it("invalidates cache on token delete", async () => {
+      await service.save("invalidate-delete-token", sampleData);
+
+      // Create cache
+      await service.getUserTokenStats(USER_ID, { enableCaching: true });
+
+      const cacheKey = `user_tokens:stats:${USER_ID}`;
+      let cacheExists = await redis.exists(cacheKey);
+      expect(cacheExists).toBe(1);
+
+      // Delete should invalidate cache
+      await service.delete("invalidate-delete-token", USER_ID);
+
+      cacheExists = await redis.exists(cacheKey);
+      expect(cacheExists).toBe(0);
+    });
+
+    it("invalidates cache on revoke all tokens", async () => {
+      await service.save("invalidate-revoke-all-token", sampleData);
+
+      // Create cache
+      await service.getUserTokenStats(USER_ID, { enableCaching: true });
+
+      const cacheKey = `user_tokens:stats:${USER_ID}`;
+      let cacheExists = await redis.exists(cacheKey);
+      expect(cacheExists).toBe(1);
+
+      // Revoke all should invalidate cache
+      await service.revokeAllUserTokens(USER_ID);
+
+      cacheExists = await redis.exists(cacheKey);
+      expect(cacheExists).toBe(0);
+    });
+
+    it("invalidates cache on revoke device tokens", async () => {
+      await service.save("invalidate-revoke-device-token", sampleData);
+
+      // Create cache
+      await service.getUserTokenStats(USER_ID, { enableCaching: true });
+
+      const cacheKey = `user_tokens:stats:${USER_ID}`;
+      let cacheExists = await redis.exists(cacheKey);
+      expect(cacheExists).toBe(1);
+
+      // Revoke device should invalidate cache
+      await service.revokeDeviceTokens(USER_ID, DEVICE_ID);
+
+      cacheExists = await redis.exists(cacheKey);
+      expect(cacheExists).toBe(0);
+    });
+
+    it("handles cache invalidation failure gracefully", async () => {
+      const warnSpy = jest.spyOn(service["logger"], "warn");
+
+      // Mock Redis del to fail
+      const originalDel = redis.del;
+      redis.del = jest.fn().mockRejectedValue(new Error("Redis del failed"));
+
+      await service.save("cache-fail-token", sampleData);
+
+      // Should not throw, but should log warning
+      await expect(
+        service.invalidateUserStatsCache(USER_ID)
+      ).resolves.not.toThrow();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        "Failed to invalidate user stats cache",
+        expect.objectContaining({
+          userId: USER_ID,
+        })
+      );
+
+      redis.del = originalDel;
+      warnSpy.mockRestore();
+    });
+
+    it("handles empty userId in cache invalidation", async () => {
+      await expect(service.invalidateUserStatsCache("")).resolves.not.toThrow();
+      await expect(
+        service.invalidateUserStatsCache("   ")
+      ).resolves.not.toThrow();
+      await expect(
+        service.invalidateUserStatsCache(null as unknown as string)
+      ).resolves.not.toThrow();
     });
   });
 
