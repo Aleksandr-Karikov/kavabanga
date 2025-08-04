@@ -8,6 +8,7 @@ import { AuthModule } from "./auth/auth.module";
 import { UsersModule } from "./users/users.module";
 import { MetricsModule } from "./metrics/metrics.module";
 import { RedisModule } from "@nestjs-modules/ioredis";
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -35,7 +36,6 @@ import { RedisModule } from "@nestjs-modules/ioredis";
         url: configService.get<string>("REDIS_URL", "redis://127.0.0.1:6379"),
       }),
       inject: [ConfigService],
-      imports: [ConfigService],
     }),
     MetricsModule,
     AuthModule,
@@ -44,5 +44,4 @@ import { RedisModule } from "@nestjs-modules/ioredis";
   controllers: [],
   providers: [],
 })
-// eslint-disable-next-line @typescript-eslint/no-extraneous-class
 export class AppModule {}

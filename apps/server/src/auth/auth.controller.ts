@@ -8,6 +8,7 @@ import {
   Res,
   Req,
   LoggerService,
+  Logger,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "./strategies/access-jwt-strategy/jwt-auth.guard";
 import { LocalAuthGuard } from "./strategies/local-strategy/local-auth.guard";
@@ -24,15 +25,15 @@ import { ConfigService } from "@nestjs/config";
 @Controller("auth")
 export class AuthController {
   private readonly REFRESH_COOKIE_NAME = "refreshToken";
-  private readonly REFRESH_TOKEN_TTL_DAYS;
+  private readonly REFRESH_TOKEN_TTL;
+  private readonly logger: LoggerService = new Logger(AuthController.name);
 
   constructor(
-    private authService: AuthService,
-    configService: ConfigService,
-    private logger: LoggerService
+    private readonly authService: AuthService,
+    configService: ConfigService
   ) {
-    this.REFRESH_TOKEN_TTL_DAYS = configService.get<number>(
-      "REFRESH_TOKEN_TTL_DAYS"
+    this.REFRESH_TOKEN_TTL = configService.get<number>(
+      "REFRESH_TOKEN_TTL"
     );
   }
 
@@ -41,7 +42,7 @@ export class AuthController {
     refreshToken: string
   ) {
     res.setCookie(this.REFRESH_COOKIE_NAME, refreshToken, {
-      maxAge: this.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60,
+      maxAge: this.REFRESH_TOKEN_TTL * 24 * 60 * 60,
       httpOnly: true,
       sameSite: "strict",
     });

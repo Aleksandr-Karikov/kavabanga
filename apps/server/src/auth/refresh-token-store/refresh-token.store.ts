@@ -1,10 +1,11 @@
+import { InjectRedis } from "@nestjs-modules/ioredis";
 import {
   Injectable,
   Logger,
   OnModuleInit,
   OnModuleDestroy,
+  Inject,
 } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { Redis } from "ioredis";
 import * as Joi from "joi";
@@ -38,6 +39,17 @@ export interface TokenStats {
   deviceCount: number;
 }
 
+export interface RefreshTokenStoreConfiguration {
+  ttl: number;
+  usedTokenTtl: number;
+  refreshTokenRedisPrefix: string;
+  userTokensSetRedisPrefix: string;
+  maxTokenLength: number;
+  maxDevicesPerUser: number;
+  maxBatchSize: number;
+  enableScheduledCleanup: boolean;
+}
+
 type LuaCommand<Args extends unknown[], Result> = (
   ...args: Args
 ) => Promise<Result>;
@@ -68,63 +80,61 @@ const CreateTokenDataSchema = Joi.object({
 @Injectable()
 export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RefreshTokenStore.name);
-  private readonly ttlSeconds: number;
-  private readonly usedTokenTtlSeconds: number;
-  private readonly refreshTokenRedisPrefix = "refresh";
-  private readonly userTokensPrefix: string;
-  private readonly maxTokenLength: number = 1000;
-  private readonly maxDevicesPerUser = 10;
-  private readonly enableScheduledCleanup: boolean;
-  private readonly maxBatchSize: number = 100;
+  private readonly configuration: RefreshTokenStoreConfiguration;
 
   constructor(
-    private readonly redis: Redis,
-    configService: ConfigService
+    @InjectRedis() private readonly redis: Redis,
+    @Inject("REFRESH_TOKEN_STORE_CONFIG")
+    config: Partial<RefreshTokenStoreConfiguration>
   ) {
-    const refreshTokenTtlDays = configService.get<number>(
-      "REFRESH_TOKEN_TTL_DAYS",
-      7
-    );
-    if (refreshTokenTtlDays < 1 || refreshTokenTtlDays > 365) {
-      throw new ConfigurationError(
-        "Invalid REFRESH_TOKEN_TTL_DAYS: must be between 1 and 365",
-        { refreshTokenTtlDays }
-      );
-    }
-
-    const usedTokenTtlMinutes = configService.get<number>(
-      "USED_TOKEN_TTL_MINUTES",
-      5
-    );
-    if (usedTokenTtlMinutes < 1 || usedTokenTtlMinutes > 60) {
-      throw new ConfigurationError(
-        "Invalid USED_TOKEN_TTL_MINUTES: must be between 1 and 60",
-        { usedTokenTtlMinutes }
-      );
-    }
-
-    this.userTokensPrefix = configService.get<string>(
-      "REDIS_USER_TOKENS_PREFIX",
-      "user_tokens"
-    );
-
-    this.enableScheduledCleanup = configService.get<boolean>(
-      "ENABLE_TOKEN_CLEANUP",
-      true
-    );
-
-    this.ttlSeconds = 60 * 60 * 24 * refreshTokenTtlDays;
-    this.usedTokenTtlSeconds = 60 * usedTokenTtlMinutes;
+    this.configuration = this.validateConfig(config);
 
     this.logger.log(
-      `Initialized with TTL: ${refreshTokenTtlDays} days, Used TTL: ${usedTokenTtlMinutes} minutes, Scheduled cleanup: ${this.enableScheduledCleanup ? "enabled" : "disabled"}`
+      `Initialized with TTL: ${this.configuration.ttl}, Used TTL: ${this.configuration.usedTokenTtl} minutes, Scheduled cleanup: ${this.configuration.enableScheduledCleanup ? "enabled" : "disabled"}`
     );
+  }
+
+  validateConfig(
+    inputConfig: Partial<RefreshTokenStoreConfiguration>
+  ): RefreshTokenStoreConfiguration {
+    const MAX_TTL = 365 * 24 * 60 * 60;
+    const USED_MAX_TTL = 60 * 60;
+
+    if (inputConfig.ttl < 1 || inputConfig.ttl > MAX_TTL) {
+      throw new ConfigurationError(
+        `Invalid ttl: must be between 1 and ${MAX_TTL}`,
+        { ttl: inputConfig.ttl }
+      );
+    }
+
+    if (
+      inputConfig.usedTokenTtl < 1 ||
+      inputConfig.usedTokenTtl > USED_MAX_TTL
+    ) {
+      throw new ConfigurationError(
+        `Invalid usedTokenTtl: must be between 1 and ${USED_MAX_TTL}`,
+        { usedTokenTtl: inputConfig.usedTokenTtl }
+      );
+    }
+
+    const config: RefreshTokenStoreConfiguration = {
+      enableScheduledCleanup: inputConfig.enableScheduledCleanup ?? true,
+      maxDevicesPerUser: inputConfig.maxDevicesPerUser ?? 10,
+      maxTokenLength: inputConfig.maxTokenLength ?? 255,
+      refreshTokenRedisPrefix: inputConfig.refreshTokenRedisPrefix ?? "refresh",
+      userTokensSetRedisPrefix:
+        inputConfig.userTokensSetRedisPrefix ?? "user_tokens",
+      ttl: inputConfig.ttl ?? 7 * 24 * 60 * 60,
+      usedTokenTtl: inputConfig.usedTokenTtl ?? 5 * 60,
+      maxBatchSize: inputConfig.maxBatchSize ?? 300,
+    };
+    return config;
   }
 
   async onModuleInit() {
     await this.initializeScripts();
 
-    if (this.enableScheduledCleanup) {
+    if (this.configuration.enableScheduledCleanup) {
       this.logger.log(
         "Scheduled cleanup is enabled. Will run every hour at minute 0."
       );
@@ -145,7 +155,7 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
     timeZone: "UTC",
   })
   async scheduledCleanup(): Promise<void> {
-    if (!this.enableScheduledCleanup) {
+    if (!this.configuration.enableScheduledCleanup) {
       this.logger.debug("Global cleanup is disabled by configuration");
       return;
     }
@@ -180,7 +190,7 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
       const [nextCursor, keys] = await this.redis.scan(
         cursor,
         "MATCH",
-        `${this.userTokensPrefix}:*`,
+        `${this.configuration.userTokensSetRedisPrefix}:*`,
         "COUNT",
         BATCH_SIZE
       );
@@ -201,7 +211,7 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
           1,
           userTokenKey,
           userId,
-          this.refreshTokenRedisPrefix
+          this.configuration.refreshTokenRedisPrefix
         );
       }
 
@@ -278,14 +288,14 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
    * @returns Complete Redis key
    */
   private getKey(token: string): string {
-    return `${this.refreshTokenRedisPrefix}:${token}`;
+    return `${this.configuration.refreshTokenRedisPrefix}:${token}`;
   }
 
   /**
    * Generates key for user's token set
    */
   private getUserTokensKey(userId: string): string {
-    return `${this.userTokensPrefix}:${userId}`;
+    return `${this.configuration.userTokensSetRedisPrefix}:${userId}`;
   }
 
   /**
@@ -306,10 +316,13 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
       throw new TokenValidationError("Token cannot be empty");
     }
 
-    if (token.length > this.maxTokenLength) {
+    if (token.length > this.configuration.maxTokenLength) {
       throw new TokenValidationError(
-        `Token too long: maximum ${this.maxTokenLength} characters`,
-        { tokenLength: token.length, maxLength: this.maxTokenLength }
+        `Token too long: maximum ${this.configuration.maxTokenLength} characters`,
+        {
+          tokenLength: token.length,
+          maxLength: this.configuration.maxTokenLength,
+        }
       );
     }
   }
@@ -400,9 +413,9 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
 
     const stats = await this.getUserTokenStats(data.userId);
 
-    if (stats.deviceCount >= this.maxDevicesPerUser) {
+    if (stats.deviceCount >= this.configuration.maxDevicesPerUser) {
       throw new TokenOperationFailedError(
-        `Device limit reached: ${this.maxDevicesPerUser}`,
+        `Device limit reached: ${this.configuration.maxDevicesPerUser}`,
         { userId: data.userId }
       );
     }
@@ -422,7 +435,7 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
         key,
         data.userId,
         userTokensKey,
-        this.ttlSeconds,
+        this.configuration.ttl,
         JSON.stringify(fullData)
       );
 
@@ -469,8 +482,10 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
     if (!tokens || tokens.length === 0) {
       return 0;
     }
-    if (tokens.length > this.maxBatchSize) {
-      throw new Error(`Batch size exceeded limit: ${this.maxBatchSize}`);
+    if (tokens.length > this.configuration.maxBatchSize) {
+      throw new Error(
+        `Batch size exceeded limit: ${this.configuration.maxBatchSize}`
+      );
     }
 
     const userGroups = new Map<string, typeof tokens>();
@@ -508,7 +523,11 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
           };
 
           const key = this.getKey(token);
-          args.push(key, JSON.stringify(fullData), this.ttlSeconds.toString());
+          args.push(
+            key,
+            JSON.stringify(fullData),
+            this.configuration.ttl.toString()
+          );
         }
 
         const result = await this.redisTyped.saveBatchTokens(
@@ -555,7 +574,7 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
         key,
         userId,
         userTokensKey,
-        this.usedTokenTtlSeconds
+        this.configuration.usedTokenTtl
       );
 
       const success = result === 1;

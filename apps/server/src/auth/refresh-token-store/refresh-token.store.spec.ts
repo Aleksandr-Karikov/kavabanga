@@ -1,6 +1,4 @@
 import { Test, TestingModule } from "@nestjs/testing";
-import { ConfigService } from "@nestjs/config";
-import Redis from "ioredis";
 import {
   RefreshTokenStore,
   TokenValidationError,
@@ -8,7 +6,10 @@ import {
   TokenOperationFailedError,
   ExtendedRedis,
   ConfigurationError,
+  RefreshTokenStoreConfiguration,
 } from "../refresh-token-store/refresh-token.store";
+import Redis from "ioredis";
+import { getRedisConnectionToken } from "@nestjs-modules/ioredis";
 
 class TokenDataBuilder {
   private data = {
@@ -46,39 +47,28 @@ describe("RefreshTokenStore Integration", () => {
     .build();
 
   beforeAll(async () => {
-    const mockConfigService = {
-      get: jest.fn((key: string) => {
-        const config = {
-          REDIS_URL: "redis://127.0.0.1:6379",
-          REFRESH_TOKEN_TTL_DAYS: 7,
-          USED_TOKEN_TTL_MINUTES: 5,
-          REDIS_USER_TOKENS_PREFIX: "user_tokens",
-        };
-        return config[key];
-      }),
+    const configuration: Partial<RefreshTokenStoreConfiguration> = {
+      userTokensSetRedisPrefix: "user_tokens",
     };
+    const mockRedis = new Redis("redis://127.0.0.1:6379");
 
     module = await Test.createTestingModule({
       imports: [],
       providers: [
         RefreshTokenStore,
         {
-          provide: ConfigService,
-          useValue: mockConfigService,
+          provide: "REFRESH_TOKEN_STORE_CONFIG",
+          useValue: configuration,
         },
         {
-          provide: Redis,
-          useFactory: (config: ConfigService) => {
-            const url = config.get<string>("REDIS_URL");
-            return new Redis(url);
-          },
-          inject: [ConfigService],
+          provide: getRedisConnectionToken(),
+          useValue: mockRedis,
         },
       ],
     }).compile();
 
     service = module.get<RefreshTokenStore>(RefreshTokenStore);
-    redis = module.get<Redis>(Redis);
+    redis = module.get<Redis>(getRedisConnectionToken());
 
     await service.onModuleInit();
   });
@@ -210,7 +200,7 @@ describe("RefreshTokenStore Integration", () => {
       });
 
       it("handles very long token strings", async () => {
-        const longToken = "x".repeat(500);
+        const longToken = "x".repeat(255);
         await service.save(longToken, sampleData);
         const data = await service.getTokenData(longToken);
         expect(data).not.toBeNull();
@@ -1043,19 +1033,13 @@ describe("RefreshTokenStore Integration", () => {
   describe("Configuration Validation", () => {
     it("throws ConfigurationError for invalid TTL days", async () => {
       const createServiceWithConfig = (ttlDays: number) => {
-        const mockConfigService = {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          get: jest.fn((key: string, defaultValue?: any) => {
-            if (key === "REFRESH_TOKEN_TTL_DAYS") return ttlDays;
-            if (key === "USED_TOKEN_TTL_MINUTES") return 5;
-            if (key === "REDIS_USER_TOKENS_PREFIX") return "user_tokens";
-            return defaultValue;
-          }),
-        };
-
         expect(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          () => new RefreshTokenStore(redis, mockConfigService as any)
+          () =>
+            new RefreshTokenStore(redis, {
+              ttl: ttlDays * 24 * 60 * 60,
+              usedTokenTtl: 5 * 60,
+              userTokensSetRedisPrefix: "user_tokens",
+            })
         ).toThrow(ConfigurationError);
       };
 
@@ -1066,19 +1050,13 @@ describe("RefreshTokenStore Integration", () => {
 
     it("throws ConfigurationError for invalid used token TTL minutes", async () => {
       const createServiceWithConfig = (ttlMinutes: number) => {
-        const mockConfigService = {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          get: jest.fn((key: string, defaultValue?: any) => {
-            if (key === "REFRESH_TOKEN_TTL_DAYS") return 7;
-            if (key === "USED_TOKEN_TTL_MINUTES") return ttlMinutes;
-            if (key === "REDIS_USER_TOKENS_PREFIX") return "user_tokens";
-            return defaultValue;
-          }),
-        };
-
         expect(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          () => new RefreshTokenStore(redis, mockConfigService as any)
+          () =>
+            new RefreshTokenStore(redis, {
+              ttl: 7 * 24 * 60 * 60,
+              usedTokenTtl: ttlMinutes * 60,
+              userTokensSetRedisPrefix: "user_tokens",
+            })
         ).toThrow(ConfigurationError);
       };
 
@@ -1088,19 +1066,13 @@ describe("RefreshTokenStore Integration", () => {
     });
 
     it("accepts valid configuration values", async () => {
-      const mockConfigService = {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        get: jest.fn((key: string, defaultValue?: any) => {
-          if (key === "REFRESH_TOKEN_TTL_DAYS") return 30;
-          if (key === "USED_TOKEN_TTL_MINUTES") return 15;
-          if (key === "REDIS_USER_TOKENS_PREFIX") return "custom_tokens";
-          return defaultValue;
-        }),
-      };
-
       expect(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        () => new RefreshTokenStore(redis, mockConfigService as any)
+        () =>
+          new RefreshTokenStore(redis, {
+            ttl: 30 * 24 * 60 * 60,
+            usedTokenTtl: 15 * 60,
+            userTokensSetRedisPrefix: "custom_tokens",
+          })
       ).not.toThrow();
     });
   });
@@ -1115,7 +1087,7 @@ describe("RefreshTokenStore Integration", () => {
     });
 
     it("accepts token at max length boundary", async () => {
-      const maxLengthToken = "x".repeat(1000);
+      const maxLengthToken = "x".repeat(255);
 
       await expect(
         service.save(maxLengthToken, sampleData)

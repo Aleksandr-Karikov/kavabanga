@@ -10,7 +10,7 @@ import { ConfigService } from "@nestjs/config";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { FastifyStaticOptions } from "@fastify/static";
 import { join } from "node:path";
-import { AllExceptionsFilter } from "src/common/http-exception.filter.js";
+import { AllExceptionsFilter } from "src/common/http-exception.filter";
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
