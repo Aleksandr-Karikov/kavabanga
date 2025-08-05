@@ -9,8 +9,7 @@ import { LocalStrategy } from "./strategies/local-strategy/local.strategy";
 import { RefreshStrategy } from "./strategies/refresh-strategy/refresh.strategy";
 import { ConfigService } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
-import { RefreshTokenStore } from "src/auth/refresh-token-store/refresh-token.store";
-import Redis from "ioredis";
+import { RefreshTokenModule } from "./refresh-token/refresh-token.module";
 
 @Module({
   imports: [
@@ -28,40 +27,16 @@ import Redis from "ioredis";
       inject: [ConfigService],
     }),
     ScheduleModule.forRoot(),
+    RefreshTokenModule.forRoot({
+      config: {
+        ttl: 7 * 24 * 60 * 60, // 7 days
+        usedTokenTtl: 5 * 60, // 5 minutes
+        maxDevicesPerUser: 5,
+        enableScheduledCleanup: true,
+      },
+    }),
   ],
-  providers: [
-    RefreshTokenStore,
-    {
-      provide: "REFRESH_TOKEN_STORE_CONFIG",
-      useFactory: (configService: ConfigService) => ({
-        ttl: configService.get<number>("REFRESH_TOKEN_TTL", 604800),
-        usedTokenTtl: configService.get<number>("USED_TOKEN_TTL", 300),
-        refreshTokenRedisPrefix: configService.get<string>(
-          "REFRESH_TOKEN_PREFIX",
-          "refresh"
-        ),
-        userTokensSetRedisPrefix: configService.get<string>(
-          "USER_TOKENS_PREFIX",
-          "user_tokens"
-        ),
-        maxTokenLength: configService.get<number>("MAX_TOKEN_LENGTH", 255),
-        maxDevicesPerUser: configService.get<number>(
-          "MAX_DEVICES_PER_USER",
-          10
-        ),
-        maxBatchSize: configService.get<number>("MAX_BATCH_SIZE", 300),
-        enableScheduledCleanup: configService.get<boolean>(
-          "ENABLE_TOKEN_CLEANUP",
-          true
-        ),
-      }),
-      inject: [ConfigService],
-    },
-    AuthService,
-    LocalStrategy,
-    JwtStrategy,
-    RefreshStrategy,
-  ],
+  providers: [AuthService, LocalStrategy, JwtStrategy, RefreshStrategy],
   controllers: [AuthController],
   exports: [AuthService],
 })
