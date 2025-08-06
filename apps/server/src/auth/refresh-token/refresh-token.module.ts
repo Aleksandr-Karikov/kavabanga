@@ -27,7 +27,7 @@ export class RefreshTokenModule {
         TokenValidator,
         {
           provide: RedisTokenRepository,
-          useFactory: (redis: any, validator: TokenValidator) => {
+          useFactory: (redis: Redis, validator: TokenValidator) => {
             const config = validator.validateConfig(options.config);
             return new RedisTokenRepository(redis, config);
           },

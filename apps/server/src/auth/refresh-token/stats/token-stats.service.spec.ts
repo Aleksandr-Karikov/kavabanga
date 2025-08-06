@@ -32,10 +32,9 @@ describe("TokenStatsService", () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        TokenStatsService,
         {
-          provide: RedisTokenRepository,
-          useValue: mockRepository,
+          provide: TokenStatsService,
+          useFactory: () => new TokenStatsService(mockRepository, mockConfig),
         },
         {
           provide: "REFRESH_TOKEN_STORE_CONFIG",

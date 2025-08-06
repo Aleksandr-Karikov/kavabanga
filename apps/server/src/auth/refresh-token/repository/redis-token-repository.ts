@@ -57,15 +57,6 @@ export class RedisTokenRepository implements OnModuleInit {
     const key = this.getTokenKey(token);
     const raw = await this.redis.get(key);
 
-    if (raw === "") {
-      this.logger.error("Invalid token, data is empty", {
-        token: token.substring(0, 10) + "...",
-      });
-      throw new TokenValidationError("Invalid token, data is empty", {
-        token: token.substring(0, 10) + "...",
-      });
-    }
-
     if (raw === null) return null;
 
     try {

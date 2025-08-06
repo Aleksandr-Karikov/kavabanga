@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import {
   TokenStats,
   TokenStatsOptions,
@@ -18,7 +18,6 @@ export class TokenStatsService {
 
   constructor(
     private readonly repository: RedisTokenRepository,
-    @Inject("REFRESH_TOKEN_STORE_CONFIG")
     private readonly configuration: RefreshTokenStoreConfiguration
   ) {}
 

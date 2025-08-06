@@ -28,13 +28,7 @@ describe("TokenCleanupService", () => {
       providers: [
         {
           provide: TokenCleanupService,
-          useFactory: (repo: RedisTokenRepository) =>
-            new TokenCleanupService(repo, mockConfig),
-          inject: [RedisTokenRepository],
-        },
-        {
-          provide: RedisTokenRepository,
-          useValue: mockRepository,
+          useFactory: () => new TokenCleanupService(mockRepository, mockConfig),
         },
       ],
     }).compile();
