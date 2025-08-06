@@ -16,7 +16,9 @@ export class TokenValidationError extends RefreshTokenStoreError {}
 export class TokenNotFoundError extends RefreshTokenStoreError {}
 export class TokenAlreadyExistsError extends RefreshTokenStoreError {}
 export class TokenOperationFailedError extends RefreshTokenStoreError {}
+export class InitializationError extends RefreshTokenStoreError {}
 export class ConfigurationError extends RefreshTokenStoreError {}
+export class DeviceLimitExceededError extends RefreshTokenStoreError {}
 
 // ===================== INTERFACES =====================
 
