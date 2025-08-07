@@ -6,6 +6,7 @@ import {
   makeGaugeProvider,
 } from "@willsoto/nestjs-prometheus";
 import { MetricsController } from "./metrics.controller";
+import { MetricsService } from "src/metrics/metrics.service";
 
 @Module({
   imports: [
@@ -19,34 +20,54 @@ import { MetricsController } from "./metrics.controller";
     }),
   ],
   providers: [
+    MetricsService,
     makeCounterProvider({
-      name: "refresh_token_operations_total",
-      help: "Total number of token operations",
-      labelNames: ["operation", "status"],
+      name: "token_operations_total",
+      help: "Total count of token operations by type and status",
+      labelNames: ["operation", "status"] as const,
     }),
+
     makeHistogramProvider({
-      name: "refresh_token_operation_duration_seconds",
+      name: "token_operations_duration_seconds",
       help: "Duration of token operations in seconds",
-      labelNames: ["operation"],
+      labelNames: ["operation"] as const,
       buckets: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5],
     }),
+
     makeGaugeProvider({
-      name: "refresh_token_active_total",
-      help: "Current number of active refresh tokens",
+      name: "active_tokens_count",
+      help: "Current count of active tokens",
     }),
-    makeCounterProvider({
-      name: "refresh_token_cleanup_operations_total",
-      help: "Total number of cleanup operations",
-      labelNames: ["type"],
+
+    makeGaugeProvider({
+      name: "total_tokens_count",
+      help: "Current count of all tokens",
     }),
+
+    makeGaugeProvider({
+      name: "unique_devices_count",
+      help: "Current count of unique devices",
+    }),
+
     makeCounterProvider({
-      name: "refresh_token_errors_total",
-      help: "Total number of errors",
-      labelNames: ["error_type"],
+      name: "token_cleanup_operations_total",
+      help: "Total count of token cleanup operations",
+      labelNames: ["type"] as const,
+    }),
+
+    makeGaugeProvider({
+      name: "tokens_cleaned_total",
+      help: "Total count of cleaned tokens",
+    }),
+
+    makeCounterProvider({
+      name: "token_errors_total",
+      help: "Total count of errors by type",
+      labelNames: ["error_type"] as const,
     }),
   ],
   controllers: [MetricsController],
-  exports: [PrometheusModule],
+  exports: [PrometheusModule, MetricsService],
 })
 // eslint-disable-next-line @typescript-eslint/no-extraneous-class
 export class MetricsModule {}

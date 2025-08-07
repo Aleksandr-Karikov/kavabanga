@@ -1,4 +1,10 @@
-import { Module, DynamicModule } from "@nestjs/common";
+// src/auth/refresh-token/refresh-token.module.ts
+import {
+  Module,
+  DynamicModule,
+  OptionalFactoryDependency,
+  InjectionToken,
+} from "@nestjs/common";
 import { ScheduleModule } from "@nestjs/schedule";
 import { TokenValidator } from "./validator/token-validator";
 import { RedisTokenRepository } from "./repository/redis-token-repository";
@@ -7,9 +13,16 @@ import { RefreshTokenStoreConfiguration } from "./refresh-token.types";
 import { TokenCleanupService } from "./cleanup/token-cleanup.service";
 import { TokenStatsService } from "./stats/token-stats.service";
 import Redis from "ioredis";
+import { ITokenRepository } from "./repository/token-repository.interface";
+import { ResilientTokenRepository } from "./repository/resilient-redis-token-repository";
+import { CircuitBreakerModule } from "src/common/circuit-breaker.module";
+import { CircuitBreakerManager } from "src/common/circuit-breaker.manager";
+import { TokenErrorClassifier } from "src/auth/refresh-token/token-error-classifier";
+import { TOKEN_REPOSITORY } from "src/auth/refresh-token/refresh-token.symbols";
 
 export interface RefreshTokenModuleOptions {
   config: Partial<RefreshTokenStoreConfiguration>;
+  enabledCircuitBreaker: boolean;
 }
 
 @Module({})
@@ -18,7 +31,10 @@ export class RefreshTokenModule {
   static forRoot(options: RefreshTokenModuleOptions): DynamicModule {
     return {
       module: RefreshTokenModule,
-      imports: [ScheduleModule.forRoot()],
+      imports: [
+        ScheduleModule.forRoot(),
+        CircuitBreakerModule.forRoot(TokenErrorClassifier),
+      ],
       providers: [
         {
           provide: "REFRESH_TOKEN_STORE_CONFIG",
@@ -26,63 +42,68 @@ export class RefreshTokenModule {
         },
         TokenValidator,
         {
-          provide: RedisTokenRepository,
-          useFactory: (redis: Redis, validator: TokenValidator) => {
+          provide: TOKEN_REPOSITORY,
+          useFactory: (
+            redis: Redis,
+            validator: TokenValidator,
+            circuitBreakerManager: CircuitBreakerManager
+          ) => {
             const config = validator.validateConfig(options.config);
-            return new RedisTokenRepository(redis, config);
+            const redisRepo = new RedisTokenRepository(redis, config);
+            return options.enabledCircuitBreaker
+              ? new ResilientTokenRepository(redisRepo, circuitBreakerManager)
+              : redisRepo;
           },
-          inject: ["default_IORedisModuleConnectionToken", TokenValidator],
+          inject: [
+            "default_IORedisModuleConnectionToken",
+            TokenValidator,
+            CircuitBreakerManager,
+          ],
         },
         {
           provide: TokenStatsService,
           useFactory: (
-            repository: RedisTokenRepository,
+            repository: ITokenRepository,
             validator: TokenValidator
           ) => {
             const config = validator.validateConfig(options.config);
             return new TokenStatsService(repository, config);
           },
-          inject: [RedisTokenRepository, TokenValidator],
+          inject: [TOKEN_REPOSITORY, TokenValidator],
         },
         {
           provide: TokenCleanupService,
           useFactory: (
-            repository: RedisTokenRepository,
+            repository: ITokenRepository,
             validator: TokenValidator
           ) => {
             const config = validator.validateConfig(options.config);
             return new TokenCleanupService(repository, config);
           },
-          inject: [RedisTokenRepository, TokenValidator],
+          inject: [TOKEN_REPOSITORY, TokenValidator],
         },
         RefreshTokenStore,
       ],
-      exports: [
-        RefreshTokenStore,
-        TokenValidator,
-        RedisTokenRepository,
-        TokenStatsService,
-        TokenCleanupService,
-      ],
+      exports: [RefreshTokenStore],
     };
   }
 
   static forRootAsync(options: {
     useFactory: (
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ...args: any[]
+      ...args: unknown[]
     ) => Promise<RefreshTokenModuleOptions> | RefreshTokenModuleOptions;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    inject?: any[];
+    inject?: (InjectionToken | OptionalFactoryDependency)[];
   }): DynamicModule {
     return {
       module: RefreshTokenModule,
-      imports: [ScheduleModule.forRoot()],
+      imports: [
+        ScheduleModule.forRoot(),
+        CircuitBreakerModule.forRoot(TokenErrorClassifier),
+      ],
       providers: [
         {
           provide: "REFRESH_TOKEN_STORE_CONFIG",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          useFactory: async (...args: any[]) => {
+          useFactory: async (...args: unknown[]) => {
             const moduleOptions = await options.useFactory(...args);
             return moduleOptions.config;
           },
@@ -90,25 +111,28 @@ export class RefreshTokenModule {
         },
         TokenValidator,
         {
-          provide: RedisTokenRepository,
+          provide: TOKEN_REPOSITORY,
           useFactory: async (
             redis: Redis,
             validator: TokenValidator,
+            circuitBreakerManager: CircuitBreakerManager,
             config: RefreshTokenStoreConfiguration
           ) => {
             const validatedConfig = validator.validateConfig(config);
-            return new RedisTokenRepository(redis, validatedConfig);
+            const redisRepo = new RedisTokenRepository(redis, validatedConfig);
+            return redisRepo;
           },
           inject: [
             "default_IORedisModuleConnectionToken",
             TokenValidator,
+            CircuitBreakerManager,
             "REFRESH_TOKEN_STORE_CONFIG",
           ],
         },
         {
           provide: TokenStatsService,
           useFactory: async (
-            repository: RedisTokenRepository,
+            repository: ITokenRepository,
             validator: TokenValidator,
             config: RefreshTokenStoreConfiguration
           ) => {
@@ -116,7 +140,7 @@ export class RefreshTokenModule {
             return new TokenStatsService(repository, validatedConfig);
           },
           inject: [
-            RedisTokenRepository,
+            TOKEN_REPOSITORY,
             TokenValidator,
             "REFRESH_TOKEN_STORE_CONFIG",
           ],
@@ -124,7 +148,7 @@ export class RefreshTokenModule {
         {
           provide: TokenCleanupService,
           useFactory: async (
-            repository: RedisTokenRepository,
+            repository: ITokenRepository,
             validator: TokenValidator,
             config: RefreshTokenStoreConfiguration
           ) => {
@@ -132,20 +156,14 @@ export class RefreshTokenModule {
             return new TokenCleanupService(repository, validatedConfig);
           },
           inject: [
-            RedisTokenRepository,
+            TOKEN_REPOSITORY,
             TokenValidator,
             "REFRESH_TOKEN_STORE_CONFIG",
           ],
         },
         RefreshTokenStore,
       ],
-      exports: [
-        RefreshTokenStore,
-        TokenValidator,
-        RedisTokenRepository,
-        TokenStatsService,
-        TokenCleanupService,
-      ],
+      exports: [RefreshTokenStore],
     };
   }
 }

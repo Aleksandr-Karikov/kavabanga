@@ -15,9 +15,10 @@ import {
 } from "./refresh-token.types";
 
 import { TokenValidator } from "./validator/token-validator";
-import { RedisTokenRepository } from "./repository/redis-token-repository";
 import { TokenStatsService } from "./stats/token-stats.service";
 import { TokenCleanupService } from "./cleanup/token-cleanup.service";
+import { ITokenRepository } from "src/auth/refresh-token/repository/token-repository.interface";
+import { TOKEN_REPOSITORY } from "src/auth/refresh-token/refresh-token.symbols";
 
 @Injectable()
 export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
@@ -28,7 +29,8 @@ export class RefreshTokenStore implements OnModuleInit, OnModuleDestroy {
     @Inject("REFRESH_TOKEN_STORE_CONFIG")
     config: Partial<RefreshTokenStoreConfiguration>,
     private readonly validator: TokenValidator,
-    private readonly repository: RedisTokenRepository,
+    @Inject(TOKEN_REPOSITORY)
+    private readonly repository: ITokenRepository,
     private readonly statsService: TokenStatsService,
     private readonly cleanupService: TokenCleanupService
   ) {

@@ -1,7 +1,8 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { RefreshTokenStoreConfiguration } from "../refresh-token.types";
-import { RedisTokenRepository } from "../repository/redis-token-repository";
+import { TOKEN_REPOSITORY } from "src/auth/refresh-token/refresh-token.symbols";
+import { ITokenRepository } from "src/auth/refresh-token/repository/token-repository.interface";
 
 @Injectable()
 export class TokenCleanupService {
@@ -9,7 +10,8 @@ export class TokenCleanupService {
   private lastCleanupTime: Date | null = null;
 
   constructor(
-    private readonly repository: RedisTokenRepository,
+    @Inject(TOKEN_REPOSITORY)
+    private readonly repository: ITokenRepository,
     private readonly configuration: RefreshTokenStoreConfiguration
   ) {}
 

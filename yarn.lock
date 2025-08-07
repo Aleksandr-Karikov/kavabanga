@@ -1968,6 +1968,13 @@
   dependencies:
     undici-types "~6.21.0"
 
+"@types/opossum@^8.1.9":
+  version "8.1.9"
+  resolved "https://registry.yarnpkg.com/@types/opossum/-/opossum-8.1.9.tgz#a6309691a3fee3d93452acbb0b7e1eb244724b17"
+  integrity sha512-Jm/tYxuJFefiwRYs+/EOsUP3ktk0c8siMgAHPLnA4PXF4wKghzcjqf88dY+Xii5jId5Txw4JV0FMKTpjbd7KJA==
+  dependencies:
+    "@types/node" "*"
+
 "@types/passport-jwt@^4.0.1":
   version "4.0.1"
   resolved "https://registry.yarnpkg.com/@types/passport-jwt/-/passport-jwt-4.0.1.tgz#080fbe934fb9f6954fb88ec4cdf4bb2cc7c4d435"
@@ -5950,6 +5957,11 @@ onetime@^5.1.0, onetime@^5.1.2:
   integrity sha512-kbpaSSGJTWdAY5KPVeMOKXSrPtr8C8C7wodJbcsd51jRnmD+GZu8Y0VoU6Dm5Z4vWr0Ig/1NKuWRKf7j5aaYSg==
   dependencies:
     mimic-fn "^2.1.0"
+
+opossum@^9.0.0:
+  version "9.0.0"
+  resolved "https://registry.yarnpkg.com/opossum/-/opossum-9.0.0.tgz#0f8050377d16324f5bf17d771ea8f6821375e209"
+  integrity sha512-K76U0QkxOfUZamneQuzz+AP0fyfTJcCplZ2oZL93nxeupuJbN4s6uFNbmVCt4eWqqGqRnnowdFuBicJ1fLMVxw==
 
 optionator@^0.9.3:
   version "0.9.4"

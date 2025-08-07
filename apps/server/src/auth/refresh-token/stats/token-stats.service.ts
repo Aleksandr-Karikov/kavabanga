@@ -1,11 +1,12 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import {
   TokenStats,
   TokenStatsOptions,
   TokenOperationFailedError,
   RefreshTokenStoreConfiguration,
 } from "../refresh-token.types";
-import { RedisTokenRepository } from "../repository/redis-token-repository";
+import { ITokenRepository } from "src/auth/refresh-token/repository/token-repository.interface";
+import { TOKEN_REPOSITORY } from "src/auth/refresh-token/refresh-token.symbols";
 
 @Injectable()
 export class TokenStatsService {
@@ -17,7 +18,8 @@ export class TokenStatsService {
   };
 
   constructor(
-    private readonly repository: RedisTokenRepository,
+    @Inject(TOKEN_REPOSITORY)
+    private readonly repository: ITokenRepository,
     private readonly configuration: RefreshTokenStoreConfiguration
   ) {}
 
@@ -39,15 +41,10 @@ export class TokenStatsService {
     const opts = { ...this.DEFAULT_STATS_OPTIONS, ...options };
 
     try {
-      const statsKey = opts.enableCaching
-        ? this.repository.getUserStatsKey(userId)
-        : "";
-
       const [activeTokens, totalTokens, deviceIds] =
         await this.repository.getUserTokenStatsOptimized(
           userId,
           opts.maxBatchSize,
-          statsKey,
           opts.statsCacheTtl
         );
 
@@ -141,8 +138,7 @@ export class TokenStatsService {
     if (!userId?.trim()) return;
 
     try {
-      const statsKey = this.repository.getUserStatsKey(userId);
-      await this.repository.deleteKey(statsKey);
+      await this.repository.invalidateStatsCache(userId);
 
       this.logger.debug("User stats cache invalidated", { userId });
     } catch (error) {

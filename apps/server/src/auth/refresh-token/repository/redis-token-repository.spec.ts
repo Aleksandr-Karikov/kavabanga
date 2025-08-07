@@ -320,7 +320,6 @@ describe("RedisTokenRepository (Unit)", () => {
       const result = await repository.getUserTokenStatsOptimized(
         USER_ID,
         100,
-        "",
         300
       );
       expect(result).toEqual(expectedStats);
@@ -332,7 +331,7 @@ describe("RedisTokenRepository (Unit)", () => {
         .mockRejectedValue(new Error("Redis error"));
 
       await expect(
-        repository.getUserTokenStatsOptimized(USER_ID, 100, "", 300)
+        repository.getUserTokenStatsOptimized(USER_ID, 100, 300)
       ).rejects.toThrow(TokenOperationFailedError);
     });
   });
@@ -650,7 +649,7 @@ describe("RedisTokenRepository (Integration)", () => {
 
     it("should return correct token statistics", async () => {
       const [activeTokens, totalTokens, devices] =
-        await repository.getUserTokenStatsOptimized(USER_ID, 100, "", 300);
+        await repository.getUserTokenStatsOptimized(USER_ID, 100, 300);
 
       expect(activeTokens).toBe(2);
       expect(totalTokens).toBe(2);
@@ -759,7 +758,7 @@ describe("RedisTokenRepository (Integration)", () => {
 
       const start = Date.now();
       const [activeTokens, totalTokens, devices] =
-        await repository.getUserTokenStatsOptimized(USER_ID, 100, "", 300);
+        await repository.getUserTokenStatsOptimized(USER_ID, 100, 300);
       const duration = Date.now() - start;
 
       expect(activeTokens).toBe(50);

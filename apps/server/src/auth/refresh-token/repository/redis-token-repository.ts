@@ -9,9 +9,10 @@ import {
   ExtendedRedis,
   InitializationError,
 } from "../refresh-token.types";
+import { ITokenRepository } from "./token-repository.interface";
 
 @Injectable()
-export class RedisTokenRepository implements OnModuleInit {
+export class RedisTokenRepository implements OnModuleInit, ITokenRepository {
   private readonly logger = new Logger(RedisTokenRepository.name);
   private scriptsInitialized = false;
   private readonly initializationPromise: Promise<void>;
@@ -347,7 +348,6 @@ export class RedisTokenRepository implements OnModuleInit {
   async getUserTokenStatsOptimized(
     userId: string,
     maxBatchSize: number,
-    statsKey: string,
     statsCacheTtl: number
   ): Promise<[number, number, string[]]> {
     await this.ensureScriptsInitialized();
@@ -358,7 +358,7 @@ export class RedisTokenRepository implements OnModuleInit {
       return await this.redisTyped.getUserTokenStatsOptimized(
         userTokensKey,
         maxBatchSize.toString(),
-        statsKey,
+        this.getUserStatsKey(userId),
         statsCacheTtl.toString()
       );
     } catch (error) {
@@ -443,6 +443,10 @@ export class RedisTokenRepository implements OnModuleInit {
         error,
       });
     }
+  }
+
+  async invalidateStatsCache(userId: string) {
+    return this.deleteKey(this.getUserStatsKey(userId));
   }
 
   /**

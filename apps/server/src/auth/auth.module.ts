@@ -34,6 +34,7 @@ import { RefreshTokenModule } from "./refresh-token/refresh-token.module";
         maxDevicesPerUser: 5,
         enableScheduledCleanup: true,
       },
+      enabledCircuitBreaker: true,
     }),
   ],
   providers: [AuthService, LocalStrategy, JwtStrategy, RefreshStrategy],
