@@ -17,8 +17,13 @@ export class ResilientTokenRepository implements ITokenRepository {
     private readonly circuitBreakerManager: CircuitBreakerManager
   ) {}
 
-  invalidateStatsCache(userId: string): Promise<number> {
-    return this.invalidateStatsCache(userId);
+  async invalidateStatsCache(userId: string): Promise<number> {
+    return this.circuitBreakerManager.fire(
+      "invalidateStatsCache",
+      () => this.repository.invalidateStatsCache(userId),
+      [userId],
+      this.defaultOptions
+    );
   }
 
   async getTokenData(token: string): Promise<RefreshTokenData | null> {
