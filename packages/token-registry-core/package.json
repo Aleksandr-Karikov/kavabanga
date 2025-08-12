@@ -1,0 +1,40 @@
+{
+  "name": "@kavabanga/token-registry-core",
+  "version": "1.0.0",
+  "description": "Flexible and extensible token registry system for NestJS applications",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "keywords": [
+    "token",
+    "registry",
+    "authentication", 
+    "jwt",
+    "session",
+    "nestjs",
+    "typescript"
+  ],
+  "author": "Kavabanga Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kavabanga/token-registry.git",
+    "directory": "packages/token-registry-core"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^11.0.1",
+    "@nestjs/core": "^11.0.1",
+    "rxjs": "^7.8.1"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint src --ext .ts",
+    "check-types": "tsc --noEmit",
+    "prepublishOnly": "yarn build"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}
+

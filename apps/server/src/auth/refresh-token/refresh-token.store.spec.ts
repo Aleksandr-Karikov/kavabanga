@@ -43,9 +43,9 @@ describe("RefreshTokenStore Integration", () => {
         {
           provide: RedisTokenRepository,
           useFactory: async (redis: Redis) => {
-            const repo = new RedisTokenRepository(redis, mockConfig);
-            await repo.onModuleInit();
-            return repo;
+            const kavabanga = new RedisTokenRepository(redis, mockConfig);
+            await kavabanga.onModuleInit();
+            return kavabanga;
           },
           inject: [getRedisConnectionToken()],
         },

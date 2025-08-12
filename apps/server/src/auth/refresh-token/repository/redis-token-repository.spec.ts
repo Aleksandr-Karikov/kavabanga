@@ -800,8 +800,10 @@ describe("RedisTokenRepository (Error Scenarios)", () => {
       mockRedis.defineCommand.mockImplementation(() => {
         throw new Error("Failed to define command");
       });
-      const repo = new RedisTokenRepository(mockRedis, mockConfig);
-      await expect(repo.onModuleInit()).rejects.toThrow(InitializationError);
+      const kavabanga = new RedisTokenRepository(mockRedis, mockConfig);
+      await expect(kavabanga.onModuleInit()).rejects.toThrow(
+        InitializationError
+      );
     });
 
     it("should wait for initialization before operations", async () => {
@@ -816,8 +818,8 @@ describe("RedisTokenRepository (Error Scenarios)", () => {
 
       mockRedis.get.mockResolvedValue(null);
 
-      const repo = new RedisTokenRepository(mockRedis, mockConfig);
-      const getDataPromise = repo.getTokenData("test");
+      const kavabanga = new RedisTokenRepository(mockRedis, mockConfig);
+      const getDataPromise = kavabanga.getTokenData("test");
 
       // Resolve initialization after a delay
       setTimeout(() => resolveInit(), 50);
