@@ -8,45 +8,51 @@ import {
 } from "../core/interfaces";
 
 /**
- * Абстрактный базовый адаптер с общими утилитами
+ * Abstract base adapter with common utilities
  *
- * Предоставляет базовую функциональность для всех адаптеров хранения токенов,
- * включая обработку ошибок, валидацию и генерацию ключей.
+ * Provides basic functionality for all token storage adapters,
+ * including error handling, validation, and key generation.
  */
 export abstract class BaseStoreAdapter implements ITokenStoreAdapter {
   /**
-   * Сохраняет токен с указанными данными и TTL
+   * Saves token with specified data and TTL
    */
   abstract saveToken(request: TokenSaveRequest): Promise<void>;
 
   /**
-   * Получает данные токена по токену
+   * Gets token data by token
    */
   abstract getTokenData(token: string): Promise<TokenData | null>;
 
   /**
-   * Удаляет конкретный токен
+   * Deletes specific token
    */
   abstract deleteToken(token: string): Promise<void>;
 
   /**
-   * Пакетное сохранение токенов
+   * Batch token saving
    */
   async saveBatchTokens(requests: TokenSaveRequest[]): Promise<void> {
-    // Базовая реализация - последовательное сохранение
-    // Конкретные адаптеры могут переопределить для оптимизации
-    for (const request of requests) {
-      await this.saveToken(request);
+    // Base implementation - sequential saving
+    // Specific adapters can override for optimization
+    try {
+      for (const request of requests) {
+        await this.saveToken(request);
+      }
+    } catch (error) {
+      this.handleError("saveBatchTokens", error, {
+        requestCount: requests.length,
+      });
     }
   }
 
   /**
-   * Проверяет здоровье адаптера
+   * Checks adapter health
    */
   abstract isHealthy(): Promise<boolean>;
 
   /**
-   * Утилитный метод для обработки ошибок
+   * Utility method for error handling
    */
   protected handleError(
     operation: string,
@@ -61,16 +67,16 @@ export abstract class BaseStoreAdapter implements ITokenStoreAdapter {
   }
 
   /**
-   * Валидирует токен (базовая проверка)
+   * Validates token (basic check)
    */
   protected validateToken(token: string): void {
-    if (!token || typeof token !== "string") {
+    if (typeof token !== "string" || token === "") {
       throw new Error("Invalid token format");
     }
   }
 
   /**
-   * Создает ключ для хранения токена (может быть переопределен)
+   * Creates key for token storage (can be overridden)
    */
   protected getTokenKey(token: string): string {
     return `token:${token}`;

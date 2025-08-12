@@ -26,28 +26,28 @@ export interface TokenSaveRequest<T extends ITokenMeta = ITokenMeta> {
 
 export interface ITokenStoreAdapter {
   /**
-   * Сохраняет токен с указанными данными и TTL
+   * Saves token with specified data and TTL
    */
   saveToken(request: TokenSaveRequest): Promise<void>;
 
   /**
-   * Получает данные токена по токену
-   * @returns TokenData или null если токен не найден
+   * Gets token data by token
+   * @returns TokenData or null if token not found
    */
   getTokenData(token: string): Promise<TokenData | null>;
 
   /**
-   * Удаляет конкретный токен
+   * Deletes specific token
    */
   deleteToken(token: string): Promise<void>;
 
   /**
-   * Пакетное сохранение токенов для производительности
+   * Batch token saving for performance
    */
   saveBatchTokens(requests: TokenSaveRequest[]): Promise<void>;
 
   /**
-   * Проверяет здоровье адаптера
+   * Checks adapter health
    */
   isHealthy(): Promise<boolean>;
 }
@@ -56,41 +56,41 @@ export interface ITokenStoreAdapter {
 
 export interface ITokenPlugin<T extends ITokenMeta = ITokenMeta> {
   readonly name: string;
-  readonly priority: number; // Меньшее значение = выше приоритет
+  readonly priority: number; // Lower value = higher priority
 
   /**
-   * Вызывается перед сохранением токена
-   * Может модифицировать данные для сохранения
+   * Called before token saving
+   * Can modify data for saving
    */
   preSave?(request: TokenSaveRequest<T>): Promise<TokenSaveRequest<T>>;
 
   /**
-   * Вызывается после успешного сохранения токена
+   * Called after successful token saving
    */
   postSave?(request: TokenSaveRequest<T>): Promise<void>;
 
   /**
-   * Вызывается перед получением данных токена
+   * Called before getting token data
    */
   preGet?(token: string): Promise<void>;
 
   /**
-   * Вызывается после получения данных токена
+   * Called after getting token data
    */
   postGet?(token: string, data: TokenData<T> | null): Promise<void>;
 
   /**
-   * Вызывается перед удалением токена
+   * Called before token deletion
    */
   preRevoke?(token: string, data: TokenData<T>): Promise<void>;
 
   /**
-   * Вызывается после удаления токена
+   * Called after token deletion
    */
   postRevoke?(token: string, data: TokenData<T>): Promise<void>;
 
   /**
-   * Вызывается при ошибках
+   * Called on errors
    */
   onError?(operation: string, error: Error, context?: any): Promise<void>;
 }
@@ -99,8 +99,8 @@ export interface ITokenPlugin<T extends ITokenMeta = ITokenMeta> {
 
 export interface ITokenValidator<T extends ITokenMeta = ITokenMeta> {
   /**
-   * Валидирует запрос на сохранение токена
-   * @throws TokenValidationError при ошибке валидации
+   * Validates token save request
+   * @throws TokenValidationError on validation error
    */
   validate(request: TokenSaveRequest<T>): Promise<void>;
 }
@@ -109,38 +109,38 @@ export interface ITokenValidator<T extends ITokenMeta = ITokenMeta> {
 
 export interface TokenRegistryConfig {
   /**
-   * Включить валидацию входных данных
+   * Enable input data validation
    */
   enableValidation: boolean;
 
   /**
-   * TTL по умолчанию в секундах (30 дней)
+   * Default TTL in seconds (30 days)
    */
   defaultTtl: number;
 
   /**
-   * Включить выполнение плагинов
+   * Enable plugin execution
    */
   enablePlugins: boolean;
 
   /**
-   * Строгий режим - дополнительные проверки
+   * Strict mode - additional checks
    */
   strictMode: boolean;
 
   /**
-   * Таймаут для операций в миллисекундах
+   * Operation timeout in milliseconds
    */
   operationTimeout: number;
 }
 
-export const DEFAULT_CONFIG: TokenRegistryConfig = {
+export const DEFAULT_CONFIG: TokenRegistryConfig = Object.freeze({
   enableValidation: true,
-  defaultTtl: 30 * 24 * 60 * 60, // 30 дней в секундах
+  defaultTtl: 30 * 24 * 60 * 60, // 30 days in seconds
   enablePlugins: true,
   strictMode: false,
-  operationTimeout: 5000, // 5 секунд
-};
+  operationTimeout: 5000, // 5 seconds
+});
 
 // ===================== ERROR CLASSES =====================
 
@@ -154,7 +154,7 @@ export abstract class TokenRegistryError extends Error {
     super(message);
     this.name = this.constructor.name;
 
-    // Для правильного instanceof в TypeScript
+    // For proper instanceof in TypeScript
     Object.setPrototypeOf(this, new.target.prototype);
   }
 
@@ -255,15 +255,15 @@ export abstract class TokenRegistryExtension<
   }
 }
 
-// Интерфейс для расширений с возможностью поиска токенов
+// Interface for extensions with token search capability
 export interface ITokenSearchCapability {
   /**
-   * Проверяет, поддерживает ли адаптер поиск
+   * Checks if adapter supports search
    */
   supportsSearch(): boolean;
 }
 
-// Предварительное объявление класса для циклических зависимостей
+// Forward class declaration for circular dependencies
 export declare class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   getStoreAdapter(): ITokenStoreAdapter;
   getConfig(): TokenRegistryConfig;

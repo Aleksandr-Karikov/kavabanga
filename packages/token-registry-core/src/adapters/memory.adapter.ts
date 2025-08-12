@@ -4,10 +4,10 @@ import { BaseStoreAdapter } from "./abstract.adapter";
 // ===================== IN-MEMORY ADAPTER =====================
 
 /**
- * In-Memory адаптер для хранения токенов в памяти
+ * In-Memory adapter for storing tokens in memory
  *
- * Простой и быстрый адаптер для разработки, тестирования и небольших приложений.
- * Автоматически удаляет токены по истечении TTL с использованием таймеров Node.js.
+ * Simple and fast adapter for development, testing and small applications.
+ * Automatically deletes tokens after TTL expiration using Node.js timers.
  */
 export class InMemoryStoreAdapter extends BaseStoreAdapter {
   private readonly tokens = new Map<string, TokenData>();
@@ -18,17 +18,19 @@ export class InMemoryStoreAdapter extends BaseStoreAdapter {
       const { token, data, ttl } = request;
       this.validateToken(token);
 
-      // Очищаем существующий таймер если есть
+      // Clear existing timer if any
       this.clearExistingTimer(token);
 
-      // Сохраняем данные
+      // Save data
       this.tokens.set(token, data);
 
-      // Устанавливаем таймер для автоматического удаления
+      // Set timer for automatic deletion
+      // Cap at maximum safe timeout value (24.8 days)
+      const timeoutMs = Math.min(ttl * 1000, 2147483647);
       const timer = setTimeout(() => {
         this.tokens.delete(token);
         this.timers.delete(token);
-      }, ttl * 1000);
+      }, timeoutMs);
 
       this.timers.set(token, timer);
     } catch (error) {
@@ -57,7 +59,7 @@ export class InMemoryStoreAdapter extends BaseStoreAdapter {
   }
 
   async saveBatchTokens(requests: TokenSaveRequest[]): Promise<void> {
-    // Оптимизированная пакетная операция
+    // Optimized batch operation
     try {
       for (const request of requests) {
         await this.saveToken(request);
@@ -70,26 +72,26 @@ export class InMemoryStoreAdapter extends BaseStoreAdapter {
   }
 
   async isHealthy(): Promise<boolean> {
-    // In-memory адаптер всегда здоров
+    // In-memory adapter is always healthy
     return true;
   }
 
   /**
-   * Получает количество активных токенов (для тестирования/мониторинга)
+   * Gets count of active tokens (for testing/monitoring)
    */
   getActiveTokenCount(): number {
     return this.tokens.size;
   }
 
   /**
-   * Получает список всех активных токенов (для отладки)
+   * Gets list of all active tokens (for debugging)
    */
   getActiveTokens(): string[] {
     return Array.from(this.tokens.keys());
   }
 
   /**
-   * Получает информацию о таймерах (для отладки)
+   * Gets timer information (for debugging)
    */
   getTimersInfo(): Array<{ token: string; hasTimer: boolean }> {
     return Array.from(this.tokens.keys()).map((token) => ({
@@ -99,10 +101,10 @@ export class InMemoryStoreAdapter extends BaseStoreAdapter {
   }
 
   /**
-   * Очищает все токены (для тестирования)
+   * Clears all tokens (for testing)
    */
   clear(): void {
-    // Очищаем все таймеры
+    // Clear all timers
     for (const timer of this.timers.values()) {
       clearTimeout(timer);
     }
@@ -112,7 +114,7 @@ export class InMemoryStoreAdapter extends BaseStoreAdapter {
   }
 
   /**
-   * Принудительно истекает токен (для тестирования)
+   * Forcibly expires token (for testing)
    */
   expireToken(token: string): boolean {
     if (this.tokens.has(token)) {
@@ -124,7 +126,7 @@ export class InMemoryStoreAdapter extends BaseStoreAdapter {
   }
 
   /**
-   * Получает статистику адаптера
+   * Gets adapter statistics
    */
   getStats(): {
     totalTokens: number;
@@ -134,7 +136,7 @@ export class InMemoryStoreAdapter extends BaseStoreAdapter {
     const totalTokens = this.tokens.size;
     const activeTimers = this.timers.size;
 
-    // Примерная оценка использования памяти
+    // Approximate memory usage estimate
     let memoryBytes = 0;
     for (const [token, data] of this.tokens.entries()) {
       memoryBytes += token.length * 2; // UTF-16
@@ -172,19 +174,19 @@ export class InMemoryStoreAdapter extends BaseStoreAdapter {
 // ===================== FACTORY FUNCTIONS =====================
 
 /**
- * Создает in-memory адаптер для разработки
+ * Creates in-memory adapter for development
  */
 export function createDevelopmentMemoryAdapter(): InMemoryStoreAdapter {
   return new InMemoryStoreAdapter();
 }
 
 /**
- * Создает in-memory адаптер для тестирования с дополнительными утилитами
+ * Creates in-memory adapter for testing with additional utilities
  */
 export function createTestMemoryAdapter(): InMemoryStoreAdapter {
   const adapter = new InMemoryStoreAdapter();
 
-  // Добавляем дополнительные методы для тестов
+  // Add additional methods for tests
   (adapter as any).getAllTokensWithData = () => {
     const entries = Array.from((adapter as any).tokens.entries()) as Array<
       [string, any]

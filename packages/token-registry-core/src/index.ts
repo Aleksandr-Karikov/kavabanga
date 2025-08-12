@@ -39,9 +39,16 @@ export type {
   TokenData,
   PluginExecutionContext,
   PluginHook,
-  TokenOperationError,
-  TokenValidationError,
+} from "./core/interfaces";
+
+// Export error classes as both types and values
+export {
   TokenRegistryError,
+  TokenValidationError,
+  TokenNotFoundError,
+  TokenOperationError,
+  TokenConfigurationError,
+  TokenTimeoutError,
 } from "./core/interfaces";
 
 // ===================== FACTORY FUNCTIONS =====================

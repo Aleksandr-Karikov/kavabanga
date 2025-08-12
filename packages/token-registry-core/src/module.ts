@@ -25,17 +25,17 @@ import { DefaultTokenValidator, NoOpValidator } from "./core/validators";
 
 export interface TokenRegistryModuleOptions<T extends ITokenMeta = ITokenMeta> {
   /**
-   * Store adapter для сохранения токенов
+   * Store adapter for saving tokens
    */
   storeAdapter: ITokenStoreAdapter | Type<ITokenStoreAdapter>;
 
   /**
-   * Конфигурация модуля (опционально)
+   * Module configuration (optional)
    */
   config?: Partial<TokenRegistryConfig>;
 
   /**
-   * Валидатор токенов (опционально, по умолчанию DefaultTokenValidator)
+   * Token validator (optional, default DefaultTokenValidator)
    */
   validator?:
     | ITokenValidator<T>
@@ -44,66 +44,66 @@ export interface TokenRegistryModuleOptions<T extends ITokenMeta = ITokenMeta> {
     | "none";
 
   /**
-   * Плагины для расширения функциональности
+   * Plugins for extending functionality
    */
   plugins?: Array<ITokenPlugin<T> | Type<ITokenPlugin<T>>>;
 
   /**
-   * Делать ли модуль глобальным
+   * Whether to make module global
    */
   isGlobal?: boolean;
 
   /**
-   * Дополнительные провайдеры
+   * Additional providers
    */
   extraProviders?: Provider[];
 
   /**
-   * Дополнительные экспорты
+   * Additional exports
    */
   extraExports?: (string | symbol | Type<any>)[];
 }
 
 export interface TokenRegistryAsyncOptions<T extends ITokenMeta = ITokenMeta> {
   /**
-   * Импорты других модулей
+   * Other module imports
    */
   imports?: any[];
 
   /**
-   * Factory function для создания опций модуля
+   * Factory function for creating module options
    */
   useFactory?: (
     ...args: any[]
   ) => Promise<TokenRegistryModuleOptions<T>> | TokenRegistryModuleOptions<T>;
 
   /**
-   * Зависимости для factory function
+   * Dependencies for factory function
    */
   inject?: any[];
 
   /**
-   * Использовать существующий класс как опции
+   * Use existing class as options
    */
   useClass?: Type<TokenRegistryModuleOptions<T>>;
 
   /**
-   * Использовать существующий провайдер как опции
+   * Use existing provider as options
    */
   useExisting?: string | symbol | Type<TokenRegistryModuleOptions<T>>;
 
   /**
-   * Делать ли модуль глобальным
+   * Whether to make module global
    */
   isGlobal?: boolean;
 
   /**
-   * Дополнительные провайдеры
+   * Additional providers
    */
   extraProviders?: Provider[];
 
   /**
-   * Дополнительные экспорты
+   * Additional exports
    */
   extraExports?: (string | symbol | Type<any>)[];
 }
@@ -121,12 +121,12 @@ export const TOKEN_PLUGINS = Symbol("TOKEN_PLUGINS");
 @Module({})
 export class TokenRegistryModule {
   /**
-   * Синхронная регистрация модуля
+   * Synchronous module registration
    */
   static forRoot<T extends ITokenMeta = ITokenMeta>(
     options: TokenRegistryModuleOptions<T>
   ): DynamicModule {
-    // Валидируем опции
+    // Validate options
     this.validateOptions(options);
 
     const providers = this.createProviders(options);
@@ -141,7 +141,7 @@ export class TokenRegistryModule {
   }
 
   /**
-   * Асинхронная регистрация модуля
+   * Asynchronous module registration
    */
   static forRootAsync<T extends ITokenMeta = ITokenMeta>(
     options: TokenRegistryAsyncOptions<T>
@@ -165,7 +165,7 @@ export class TokenRegistryModule {
   ): Provider[] {
     const providers: Provider[] = [];
 
-    // Конфигурация
+    // Configuration
     providers.push(this.createConfigProvider(options.config));
 
     // Store Adapter
@@ -198,7 +198,7 @@ export class TokenRegistryModule {
     // Options provider
     providers.push(this.createAsyncOptionsProvider(options));
 
-    // Конфигурация
+    // Configuration
     providers.push(this.createAsyncConfigProvider());
 
     // Store Adapter
@@ -372,7 +372,7 @@ export class TokenRegistryModule {
       ) => {
         const service = new TokenRegistryService(adapter, config, validator);
 
-        // Регистрируем плагины
+        // Register plugins
         for (const plugin of plugins) {
           service.registerPlugin(plugin);
         }
@@ -399,7 +399,7 @@ export class TokenRegistryModule {
       ) => {
         const service = new TokenRegistryService(adapter, config, validator);
 
-        // Регистрируем плагины
+        // Register plugins
         for (const plugin of plugins) {
           service.registerPlugin(plugin);
         }
@@ -454,33 +454,33 @@ export class TokenRegistryModule {
   private static createExports<T extends ITokenMeta = ITokenMeta>(
     options: TokenRegistryModuleOptions<T>
   ): (string | symbol | Type<any>)[] {
-    const exports: (string | symbol | Type<any>)[] = [
+    const moduleExports: (string | symbol | Type<any>)[] = [
       TokenRegistryService,
       TOKEN_REGISTRY_CONFIG,
       TOKEN_STORE_ADAPTER,
     ];
 
     if (options.extraExports) {
-      exports.push(...options.extraExports);
+      moduleExports.push(...options.extraExports);
     }
 
-    return exports;
+    return moduleExports;
   }
 
   private static createAsyncExports<T extends ITokenMeta = ITokenMeta>(
     options: TokenRegistryAsyncOptions<T>
   ): (string | symbol | Type<any>)[] {
-    const exports: (string | symbol | Type<any>)[] = [
+    const moduleExports: (string | symbol | Type<any>)[] = [
       TokenRegistryService,
       TOKEN_REGISTRY_CONFIG,
       TOKEN_STORE_ADAPTER,
     ];
 
     if (options.extraExports) {
-      exports.push(...options.extraExports);
+      moduleExports.push(...options.extraExports);
     }
 
-    return exports;
+    return moduleExports;
   }
 
   // ===================== VALIDATION =====================
@@ -496,12 +496,12 @@ export class TokenRegistryModule {
       throw new TokenConfigurationError("storeAdapter is required");
     }
 
-    // Валидация конфигурации
+    // Configuration validation
     if (options.config) {
       this.validateConfig(options.config);
     }
 
-    // Валидация плагинов
+    // Plugin validation
     if (options.plugins) {
       this.validatePlugins(options.plugins);
     }
@@ -539,7 +539,7 @@ export class TokenRegistryModule {
       let pluginName: string;
 
       if (typeof plugin === "function") {
-        // Для классов плагинов пытаемся получить имя из прототипа
+        // For plugin classes try to get name from prototype
         pluginName = plugin.name || "UnnamedPlugin";
       } else {
         pluginName = plugin.name;
@@ -565,7 +565,7 @@ export class TokenRegistryModule {
 // ===================== HELPER FUNCTIONS =====================
 
 /**
- * Создает базовый модуль с минимальной конфигурацией
+ * Creates basic module with minimal configuration
  */
 export function createBasicTokenRegistryModule<
   T extends ITokenMeta = ITokenMeta,
@@ -581,7 +581,7 @@ export function createBasicTokenRegistryModule<
 }
 
 /**
- * Создает модуль для тестирования с отключенной валидацией
+ * Creates module for testing with disabled validation
  */
 export function createTestTokenRegistryModule<
   T extends ITokenMeta = ITokenMeta,

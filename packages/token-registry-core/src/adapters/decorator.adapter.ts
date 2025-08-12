@@ -7,11 +7,11 @@ import {
 } from "../core/interfaces";
 
 /**
- * Базовый класс для декораторов адаптеров
+ * Base class for adapter decorators
  *
- * Реализует паттерн Decorator для композиции возможностей адаптеров.
- * Позволяет оборачивать любой адаптер и добавлять дополнительную функциональность
- * без изменения интерфейса.
+ * Implements Decorator pattern for adapter capability composition.
+ * Allows wrapping any adapter and adding additional functionality
+ * without changing the interface.
  */
 export abstract class StoreAdapterDecorator implements ITokenStoreAdapter {
   constructor(protected readonly wrapped: ITokenStoreAdapter) {
@@ -41,14 +41,14 @@ export abstract class StoreAdapterDecorator implements ITokenStoreAdapter {
   }
 
   /**
-   * Предоставляет доступ к оборачиваемому адаптеру
+   * Provides access to wrapped adapter
    */
   protected getWrapped(): ITokenStoreAdapter {
     return this.wrapped;
   }
 
   /**
-   * Получает самый глубокий адаптер в цепочке декораторов
+   * Gets the deepest adapter in decorator chain
    */
   protected getInnerMost(): ITokenStoreAdapter {
     let current: ITokenStoreAdapter = this.wrapped;

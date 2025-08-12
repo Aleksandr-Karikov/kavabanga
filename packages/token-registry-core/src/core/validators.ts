@@ -57,7 +57,7 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
       );
     }
 
-    // Проверка на недопустимые символы
+    // Check for invalid characters
     if (!/^[a-zA-Z0-9._-]+$/.test(token)) {
       throw new TokenValidationError(
         "Token contains invalid characters (allowed: a-z, A-Z, 0-9, ., _, -)"
@@ -76,23 +76,23 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
       });
     }
 
-    // Валидация sub (subject)
+    // Validate sub (subject)
     await this.validateSubject(data.sub);
 
-    // Валидация timestamps
+    // Validate timestamps
     await this.validateTimestamps(data.issuedAt, data.expiresAt);
 
-    // Валидация meta
+    // Validate meta
     await this.validateMeta(data.meta);
 
-    // Валидация version (опционально)
+    // Validate version (optional)
     if (data.version !== undefined) {
       await this.validateVersion(data.version);
     }
   }
 
   private async validateSubject(sub: any): Promise<void> {
-    if (!sub) {
+    if (!sub && sub !== "") {
       throw new TokenValidationError("Subject (sub) is required");
     }
 
@@ -121,7 +121,7 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
     issuedAt: any,
     expiresAt: any
   ): Promise<void> {
-    // Валидация issuedAt
+    // Validate issuedAt
     if (issuedAt === undefined || issuedAt === null) {
       throw new TokenValidationError("issuedAt timestamp is required");
     }
@@ -136,7 +136,7 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
       );
     }
 
-    // Валидация expiresAt
+    // Validate expiresAt
     if (expiresAt === undefined || expiresAt === null) {
       throw new TokenValidationError("expiresAt timestamp is required");
     }
@@ -151,7 +151,7 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
       );
     }
 
-    // Проверка логической связи между timestamps
+    // Check logical relationship between timestamps
     if (expiresAt <= issuedAt) {
       throw new TokenValidationError(
         "expiresAt must be greater than issuedAt",
@@ -163,10 +163,10 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
       );
     }
 
-    // Проверка разумности timestamps
+    // Check timestamp reasonableness
     const now = Date.now();
-    const maxPastTime = now - 24 * 60 * 60 * 1000; // 24 часа назад
-    const maxFutureTime = now + 365 * 24 * 60 * 60 * 1000; // 1 год вперед
+    const maxPastTime = now - 24 * 60 * 60 * 1000; // 24 hours ago
+    const maxFutureTime = now + 365 * 24 * 60 * 60 * 1000; // 1 year ahead
 
     if (issuedAt < maxPastTime) {
       throw new TokenValidationError(
@@ -203,7 +203,7 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
       });
     }
 
-    // Валидация стандартных полей meta
+    // Validate standard meta fields
     if (meta.deviceId !== undefined) {
       await this.validateDeviceId(meta.deviceId);
     }
@@ -220,7 +220,7 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
       await this.validateFingerprint(meta.fingerprint);
     }
 
-    // Проверка размера meta объекта
+    // Check meta object size
     const metaString = JSON.stringify(meta);
     if (metaString.length > 2048) {
       throw new TokenValidationError("Meta object too large (maximum 2KB)", {
@@ -331,7 +331,7 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
       );
     }
 
-    const maxTtl = 365 * 24 * 60 * 60; // 1 год в секундах
+    const maxTtl = 365 * 24 * 60 * 60; // 1 year in seconds
     if (ttl > maxTtl) {
       throw new TokenValidationError("TTL too large (maximum 1 year)", {
         ttl,
@@ -340,7 +340,7 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
       });
     }
 
-    const minTtl = 60; // 1 минута
+    const minTtl = 60; // 1 minute
     if (ttl < minTtl) {
       throw new TokenValidationError("TTL too small (minimum 1 minute)", {
         ttl,
@@ -352,32 +352,29 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
   private async validateStrict(request: TokenSaveRequest<T>): Promise<void> {
     const { token, data } = request;
 
-    // В строгом режиме требуем обязательные поля
+    // Check for future timestamps first (most critical)
+    const now = Date.now();
+    if (data.issuedAt > now + 60000) {
+      // 1 minute in the future
+      throw new TokenValidationError("issuedAt cannot be in the future", {
+        issuedAt: data.issuedAt,
+        now,
+        difference: data.issuedAt - now,
+      });
+    }
+
+    // In strict mode require mandatory fields
     if (!data.meta.deviceId && !data.meta.ipAddress) {
       throw new TokenValidationError(
         "In strict mode, either deviceId or ipAddress is required in meta"
       );
     }
 
-    // Дополнительная проверка токена на энтропию в строгом режиме
+    // Additional token entropy check in strict mode
     if (!this.hasGoodEntropy(token)) {
       throw new TokenValidationError(
         "Token has insufficient entropy in strict mode",
         { token: token.substring(0, 8) + "..." }
-      );
-    }
-
-    // Проверка на будущие timestamps
-    const now = Date.now();
-    if (data.issuedAt > now + 60000) {
-      // 1 минута в будущем
-      throw new TokenValidationError(
-        "issuedAt cannot be in the future (strict mode)",
-        {
-          issuedAt: data.issuedAt,
-          now,
-          difference: data.issuedAt - now,
-        }
       );
     }
   }
@@ -394,7 +391,7 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
   }
 
   private hasGoodEntropy(token: string): boolean {
-    // Простая проверка энтропии - разнообразие символов
+    // Simple entropy check - character diversity
     const uniqueChars = new Set(token).size;
     const minUniqueChars = Math.min(8, Math.floor(token.length * 0.5));
 
@@ -421,7 +418,7 @@ export class StrictTokenValidator<
   ): Promise<void> {
     const { data } = request;
 
-    // Обязательные поля в строгом режиме
+    // Required fields in strict mode
     if (!data.meta.deviceId) {
       throw new TokenValidationError("deviceId is required in strict mode");
     }
@@ -434,7 +431,7 @@ export class StrictTokenValidator<
       throw new TokenValidationError("userAgent is required in strict mode");
     }
 
-    // Дополнительные проверки безопасности
+    // Additional security checks
     await this.validateSecurityRequirements(request);
   }
 
@@ -443,24 +440,23 @@ export class StrictTokenValidator<
   ): Promise<void> {
     const { token, data } = request;
 
-    // Проверка на подозрительные IP
+    // Check token length for strict security first
+    if (token.length < 32) {
+      throw new TokenValidationError("Token too short for strict mode", {
+        tokenLength: token.length,
+      });
+    }
+
+    // Check for suspicious IPs
     if (this.isSuspiciousIp(data.meta.ipAddress!)) {
       throw new TokenValidationError("Suspicious IP address detected", {
         ipAddress: data.meta.ipAddress,
       });
     }
-
-    // Проверка длины токена для строгой безопасности
-    if (token.length < 32) {
-      throw new TokenValidationError(
-        "Token too short for strict mode (minimum 32 characters)",
-        { tokenLength: token.length }
-      );
-    }
   }
 
   private isSuspiciousIp(ip: string): boolean {
-    // Простые проверки на подозрительные IP
+    // Simple checks for suspicious IPs
     const suspiciousPatterns = [
       /^127\./, // localhost
       /^10\./, // private network

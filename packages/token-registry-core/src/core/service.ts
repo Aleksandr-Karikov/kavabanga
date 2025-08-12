@@ -17,7 +17,7 @@ import {
 } from "./interfaces";
 
 /**
- * Основной сервис для управления токенами
+ * Main service for token management
  */
 export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   private plugins: ITokenPlugin<T>[] = [];
@@ -30,7 +30,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   ) {}
 
   /**
-   * Регистрирует плагин в сервисе
+   * Registers plugin in service
    */
   registerPlugin(plugin: ITokenPlugin<T>): void {
     if (this.plugins.some((p) => p.name === plugin.name)) {
@@ -44,7 +44,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   }
 
   /**
-   * Отменяет регистрацию плагина
+   * Unregisters plugin
    */
   unregisterPlugin(pluginName: string): void {
     const index = this.plugins.findIndex((p) => p.name === pluginName);
@@ -54,7 +54,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   }
 
   /**
-   * Сохраняет токен с указанными данными
+   * Saves token with specified data
    */
   async saveToken(
     token: string,
@@ -74,25 +74,25 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     return this.executeOperation(
       "saveToken",
       async () => {
-        // Валидация запроса
+        // Request validation
         if (this.config.enableValidation) {
           await this.validator.validate(request);
         }
 
-        // Выполнение хуков перед сохранением
+        // Execute hooks before saving
         await this.executePlugins("preSave", { request });
 
-        // Приводим к базовому типу для адаптера
+        // Cast to base type for adapter
         const baseRequest: TokenSaveRequest = {
           token: request.token,
           data: request.data as TokenData<ITokenMeta>,
           ttl: request.ttl,
         };
 
-        // Сохранение через адаптер
+        // Save through adapter
         await this.adapter.saveToken(baseRequest);
 
-        // Выполнение хуков после сохранения
+        // Execute hooks after saving
         await this.executePlugins("postSave", { request });
       },
       { token }
@@ -100,7 +100,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   }
 
   /**
-   * Получает данные токена
+   * Gets token data
    */
   async getTokenData(token: string): Promise<TokenData<T> | null> {
     if (this.isShuttingDown) {
@@ -113,16 +113,16 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     return this.executeOperation(
       "getTokenData",
       async () => {
-        // Выполнение хуков перед получением
+        // Execute hooks before getting
         await this.executePlugins("preGet", { token });
 
-        // Получение данных через адаптер
+        // Get data through adapter
         const data = await this.adapter.getTokenData(token);
 
-        // Приводим к generic типу с проверкой
+        // Cast to generic type with validation
         const typedData = data ? this.castTokenData<T>(data) : null;
 
-        // Выполнение хуков после получения
+        // Execute hooks after getting
         await this.executePlugins("postGet", {
           token,
           data: typedData || undefined,
@@ -135,7 +135,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   }
 
   /**
-   * Отзывает (удаляет) токен
+   * Revokes (deletes) token
    */
   async revokeToken(token: string): Promise<void> {
     if (this.isShuttingDown) {
@@ -148,22 +148,22 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     return this.executeOperation(
       "revokeToken",
       async () => {
-        // Сначала получаем данные токена для хуков
+        // First get token data for hooks
         const data = await this.getTokenData(token);
         if (!data) {
           throw new TokenNotFoundError(token);
         }
 
-        // Выполнение хуков перед удалением
+        // Execute hooks before deletion
         await this.executePlugins("preRevoke", {
           token,
           data,
         });
 
-        // Удаление через адаптер
+        // Delete through adapter
         await this.adapter.deleteToken(token);
 
-        // Выполнение хуков после удаления
+        // Execute hooks after deletion
         await this.executePlugins("postRevoke", {
           token,
           data,
@@ -174,7 +174,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   }
 
   /**
-   * Пакетное сохранение токенов
+   * Batch token saving
    */
   async saveBatchTokens(requests: TokenSaveRequest<T>[]): Promise<void> {
     if (this.isShuttingDown) {
@@ -187,14 +187,14 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     return this.executeOperation(
       "saveBatchTokens",
       async () => {
-        // Валидация всех запросов
+        // Validate all requests
         if (this.config.enableValidation) {
           await Promise.all(
             requests.map((req) => this.validator.validate(req))
           );
         }
 
-        // Выполнение хуков перед сохранением для всех токенов
+        // Execute hooks before saving for all tokens
         if (this.config.enablePlugins) {
           await Promise.all(
             requests.map((request) =>
@@ -203,17 +203,17 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
           );
         }
 
-        // Конвертируем запросы к базовому типу
+        // Convert requests to base type
         const baseRequests = requests.map((req) => ({
           token: req.token,
           data: req.data as TokenData<ITokenMeta>,
           ttl: req.ttl,
         }));
 
-        // Пакетное сохранение через адаптер
+        // Batch save through adapter
         await this.adapter.saveBatchTokens(baseRequests);
 
-        // Выполнение хуков после сохранения для всех токенов
+        // Execute hooks after saving for all tokens
         if (this.config.enablePlugins) {
           await Promise.all(
             requests.map((request) =>
@@ -227,7 +227,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   }
 
   /**
-   * Проверяет состояние здоровья сервиса
+   * Checks service health status
    */
   async getHealthStatus(): Promise<boolean> {
     try {
@@ -240,30 +240,30 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   }
 
   /**
-   * Корректно завершает работу сервиса
+   * Gracefully shuts down service
    */
   async shutdown(): Promise<void> {
     this.isShuttingDown = true;
-    // Даем время завершиться текущим операциям
+    // Give time for current operations to complete
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 
   /**
-   * Получает текущий адаптер хранилища (для расширений)
+   * Gets current store adapter (for extensions)
    */
   getStoreAdapter(): ITokenStoreAdapter {
     return this.adapter;
   }
 
   /**
-   * Получает текущую конфигурацию (для расширений)
+   * Gets current configuration (for extensions)
    */
   getConfig(): TokenRegistryConfig {
     return this.config;
   }
 
   /**
-   * Получает список зарегистрированных плагинов
+   * Gets list of registered plugins
    */
   getRegisteredPlugins(): readonly ITokenPlugin<T>[] {
     return [...this.plugins];
@@ -272,7 +272,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   // ===================== PRIVATE METHODS =====================
 
   /**
-   * Выполняет операцию с обработкой ошибок и таймаутом
+   * Executes operation with error handling and timeout
    */
   private async executeOperation<R>(
     operation: string,
@@ -289,7 +289,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
       }
       return await fn();
     } catch (error) {
-      // Уведомляем плагины об ошибке
+      // Notify plugins about error
       if (this.config.enablePlugins) {
         await Promise.all(
           this.plugins.map((plugin) => {
@@ -301,18 +301,18 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
         );
       }
 
-      // Перебрасываем ошибки TokenRegistry как есть
+      // Re-throw TokenRegistry errors as is
       if (error instanceof TokenRegistryError) {
         throw error;
       }
 
-      // Оборачиваем другие ошибки
+      // Wrap other errors
       throw new TokenOperationError(operation, error as Error, context);
     }
   }
 
   /**
-   * Добавляет таймаут к промису
+   * Adds timeout to promise
    */
   private async withTimeout<R>(
     promise: Promise<R>,
@@ -330,7 +330,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   }
 
   /**
-   * Выполняет хуки плагинов
+   * Executes plugin hooks
    */
   private async executePlugins(
     hook: Exclude<PluginHook, "onError">,
@@ -347,7 +347,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
       const pluginFn = plugin[hook];
       if (typeof pluginFn === "function") {
         try {
-          // Исправляем вызов плагина в зависимости от хука
+          // Fix plugin call depending on hook
           switch (hook) {
             case "preSave":
               if (context.request && pluginFn === plugin.preSave) {
@@ -394,36 +394,36 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
             error
           );
 
-          // Уведомляем плагин об ошибке
+          // Notify plugin about error
           if (plugin.onError) {
             await plugin.onError(hook, error as Error, fullContext);
           }
 
-          // В production можно выбросить ошибку или продолжить
-          // В зависимости от стратегии обработки ошибок плагинов
+          // In production can throw error or continue
+          // Depending on plugin error handling strategy
         }
       }
     }
   }
 
   /**
-   * Приводит данные токена к нужному generic типу
+   * Casts token data to required generic type
    */
   private castTokenData<T extends ITokenMeta>(
     data: TokenData<ITokenMeta>
   ): TokenData<T> {
-    // Здесь можно добавить дополнительную проверку структуры
-    // при необходимости в будущем
+    // Here additional structure validation can be added
+    // if needed in the future
     return data as unknown as TokenData<T>;
   }
 }
 
 /**
- * Фабрика для создания экземпляров TokenRegistryService
+ * Factory for creating TokenRegistryService instances
  */
 export class TokenRegistryServiceFactory {
   /**
-   * Создает новый экземпляр сервиса с указанными параметрами
+   * Creates new service instance with specified parameters
    */
   static create<T extends ITokenMeta = ITokenMeta>(
     adapter: ITokenStoreAdapter,
@@ -433,14 +433,14 @@ export class TokenRegistryServiceFactory {
   ): TokenRegistryService<T> {
     const service = new TokenRegistryService(adapter, config, validator);
 
-    // Регистрируем все плагины
+    // Register all plugins
     plugins.forEach((plugin) => service.registerPlugin(plugin));
 
     return service;
   }
 
   /**
-   * Создает сервис с конфигурацией по умолчанию
+   * Creates service with default configuration
    */
   static createDefault<T extends ITokenMeta = ITokenMeta>(
     adapter: ITokenStoreAdapter,
