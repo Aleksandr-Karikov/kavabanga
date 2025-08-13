@@ -174,59 +174,6 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   }
 
   /**
-   * Batch token saving
-   */
-  async saveBatchTokens(requests: TokenSaveRequest<T>[]): Promise<void> {
-    if (this.isShuttingDown) {
-      throw new TokenOperationError(
-        "saveBatchTokens",
-        new Error("Service is shutting down")
-      );
-    }
-
-    return this.executeOperation(
-      "saveBatchTokens",
-      async () => {
-        // Validate all requests
-        if (this.config.enableValidation) {
-          await Promise.all(
-            requests.map((req) => this.validator.validate(req))
-          );
-        }
-
-        // Execute hooks before saving for all tokens
-        if (this.config.enablePlugins) {
-          await Promise.all(
-            requests.map((request) =>
-              this.executePlugins("preSave", { request })
-            )
-          );
-        }
-
-        // Convert requests to base type
-        const baseRequests = requests.map((req) => ({
-          token: req.token,
-          data: req.data as TokenData<ITokenMeta>,
-          ttl: req.ttl,
-        }));
-
-        // Batch save through adapter
-        await this.adapter.saveBatchTokens(baseRequests);
-
-        // Execute hooks after saving for all tokens
-        if (this.config.enablePlugins) {
-          await Promise.all(
-            requests.map((request) =>
-              this.executePlugins("postSave", { request })
-            )
-          );
-        }
-      },
-      { batchSize: requests.length }
-    );
-  }
-
-  /**
    * Checks service health status
    */
   async getHealthStatus(): Promise<boolean> {

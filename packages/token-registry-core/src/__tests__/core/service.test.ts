@@ -35,7 +35,6 @@ const createMockAdapter = (): jest.Mocked<ITokenStoreAdapter> => ({
   saveToken: jest.fn(),
   getTokenData: jest.fn(),
   deleteToken: jest.fn(),
-  saveBatchTokens: jest.fn(),
   isHealthy: jest.fn().mockResolvedValue(true),
 });
 
@@ -284,46 +283,6 @@ describe("TokenRegistryService", () => {
         request.token,
         request.data
       );
-    });
-  });
-
-  describe("saveBatchTokens", () => {
-    it("should save batch of tokens successfully", async () => {
-      const requests = [
-        createTestRequest(),
-        { ...createTestRequest(), token: "token2" },
-      ];
-
-      mockValidator.validate.mockResolvedValue();
-      mockAdapter.saveBatchTokens.mockResolvedValue();
-
-      await service.saveBatchTokens(requests);
-
-      expect(mockValidator.validate).toHaveBeenCalledTimes(2);
-      expect(mockAdapter.saveBatchTokens).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({ token: requests[0]!.token }),
-          expect.objectContaining({ token: requests[1]!.token }),
-        ])
-      );
-    });
-
-    it("should execute plugins for all tokens in batch", async () => {
-      const plugin = createMockPlugin("TestPlugin");
-      service.registerPlugin(plugin);
-
-      const requests = [
-        createTestRequest(),
-        { ...createTestRequest(), token: "token2" },
-      ];
-
-      mockValidator.validate.mockResolvedValue();
-      mockAdapter.saveBatchTokens.mockResolvedValue();
-
-      await service.saveBatchTokens(requests);
-
-      expect(plugin.preSave).toHaveBeenCalledTimes(2);
-      expect(plugin.postSave).toHaveBeenCalledTimes(2);
     });
   });
 

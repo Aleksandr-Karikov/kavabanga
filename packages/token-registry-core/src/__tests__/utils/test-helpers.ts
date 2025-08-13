@@ -60,7 +60,6 @@ export const createMockStoreAdapter = (): jest.Mocked<ITokenStoreAdapter> => ({
   saveToken: jest.fn().mockResolvedValue(undefined),
   getTokenData: jest.fn().mockResolvedValue(null),
   deleteToken: jest.fn().mockResolvedValue(undefined),
-  saveBatchTokens: jest.fn().mockResolvedValue(undefined),
   isHealthy: jest.fn().mockResolvedValue(true),
 });
 

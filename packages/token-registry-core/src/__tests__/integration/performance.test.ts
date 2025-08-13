@@ -76,39 +76,6 @@ describe("Performance Tests", () => {
     });
   });
 
-  describe("Batch Operations Performance", () => {
-    it("should handle batch saves efficiently", async () => {
-      const result = await runPerformanceTest(async () => {
-        const requests = Array.from({ length: 10 }, () =>
-          createTestSaveRequest()
-        );
-        await service.saveBatchTokens(requests);
-      }, 100);
-
-      expect(result.opsPerSecond).toBeGreaterThan(50); // At least 50 batch ops/sec (500 tokens/sec)
-    });
-
-    it("should scale batch operations linearly", async () => {
-      const batchSizes = [10, 50, 100];
-      const results: number[] = [];
-
-      for (const batchSize of batchSizes) {
-        const result = await runPerformanceTest(async () => {
-          const requests = Array.from({ length: batchSize }, () =>
-            createTestSaveRequest()
-          );
-          await service.saveBatchTokens(requests);
-        }, 50);
-
-        results.push(result.averageMs / batchSize); // Time per token
-      }
-
-      // Time per token should remain relatively constant (allow more variance in CI)
-      const variance = Math.max(...results) / Math.min(...results);
-      expect(variance).toBeLessThan(5); // Less than 5x variance
-    });
-  });
-
   describe("Concurrent Operations", () => {
     it("should handle concurrent saves", async () => {
       const startTime = Date.now();

@@ -30,23 +30,6 @@ export abstract class BaseStoreAdapter implements ITokenStoreAdapter {
   abstract deleteToken(token: string): Promise<void>;
 
   /**
-   * Batch token saving
-   */
-  async saveBatchTokens(requests: TokenSaveRequest[]): Promise<void> {
-    // Base implementation - sequential saving
-    // Specific adapters can override for optimization
-    try {
-      for (const request of requests) {
-        await this.saveToken(request);
-      }
-    } catch (error) {
-      this.handleError("saveBatchTokens", error, {
-        requestCount: requests.length,
-      });
-    }
-  }
-
-  /**
    * Checks adapter health
    */
   abstract isHealthy(): Promise<boolean>;

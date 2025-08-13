@@ -119,42 +119,6 @@ describe("BaseStoreAdapter", () => {
     });
   });
 
-  describe("saveBatchTokens default implementation", () => {
-    it("should save tokens sequentially", async () => {
-      const requests = [
-        createTestRequest(),
-        { ...createTestRequest(), token: "token2" },
-        { ...createTestRequest(), token: "token3" },
-      ];
-
-      await adapter.saveBatchTokens(requests);
-
-      for (const request of requests) {
-        const data = await adapter.getTokenData(request.token);
-        expect(data).toEqual(request.data);
-      }
-    });
-
-    it("should handle empty batch", async () => {
-      await expect(adapter.saveBatchTokens([])).resolves.not.toThrow();
-    });
-
-    it("should fail if any token fails", async () => {
-      const requests = [
-        createTestRequest(),
-        { ...createTestRequest(), token: "token2" },
-      ];
-
-      // Make the adapter throw after first token
-      await adapter.saveToken(requests[0]);
-      adapter.setShouldThrow(true);
-
-      await expect(adapter.saveBatchTokens(requests)).rejects.toThrow(
-        TokenOperationError
-      );
-    });
-  });
-
   describe("error handling", () => {
     it("should wrap errors in TokenOperationError", () => {
       const originalError = new Error("Original error");

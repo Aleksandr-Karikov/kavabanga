@@ -364,7 +364,6 @@ interface ITokenStoreAdapter {
   saveToken(request: TokenSaveRequest): Promise<void>;
   getTokenData(token: string): Promise<TokenData | null>;
   deleteToken(token: string): Promise<void>;
-  saveBatchTokens(requests: TokenSaveRequest[]): Promise<void>;
   isHealthy(): Promise<boolean>;
 }
 ```
@@ -447,19 +446,13 @@ plugins: [new AuditPlugin(), new SecurityPlugin()];
 
 ### Производительность
 
-1. **Используйте пакетные операции**:
-
-```typescript
-await tokenRegistry.saveBatchTokens(tokenRequests);
-```
-
-2. **Настройте failover для критических систем**:
+1. **Настройте failover для критических систем**:
 
 ```typescript
 new FailoverStoreAdapter(primaryAdapter, fallbackAdapter);
 ```
 
-3. **Используйте таймауты**:
+2. **Используйте таймауты**:
 
 ```typescript
 {

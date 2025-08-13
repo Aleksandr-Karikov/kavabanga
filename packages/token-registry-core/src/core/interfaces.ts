@@ -42,11 +42,6 @@ export interface ITokenStoreAdapter {
   deleteToken(token: string): Promise<void>;
 
   /**
-   * Batch token saving for performance
-   */
-  saveBatchTokens(requests: TokenSaveRequest[]): Promise<void>;
-
-  /**
    * Checks adapter health
    */
   isHealthy(): Promise<boolean>;

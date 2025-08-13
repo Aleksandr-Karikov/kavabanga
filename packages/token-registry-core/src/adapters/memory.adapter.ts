@@ -58,19 +58,6 @@ export class InMemoryStoreAdapter extends BaseStoreAdapter {
     }
   }
 
-  async saveBatchTokens(requests: TokenSaveRequest[]): Promise<void> {
-    // Optimized batch operation
-    try {
-      for (const request of requests) {
-        await this.saveToken(request);
-      }
-    } catch (error) {
-      this.handleError("saveBatchTokens", error, {
-        batchSize: requests.length,
-      });
-    }
-  }
-
   async isHealthy(): Promise<boolean> {
     // In-memory adapter is always healthy
     return true;

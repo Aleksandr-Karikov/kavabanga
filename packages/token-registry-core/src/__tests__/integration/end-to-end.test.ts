@@ -97,34 +97,6 @@ describe("End-to-End Integration Tests", () => {
       expect(afterRevoke).toBeNull();
     });
 
-    it("should handle batch operations correctly", async () => {
-      const requests = Array.from({ length: 5 }, (_, i) => ({
-        ...createTestSaveRequest(),
-        token: `batch-token-${i}`,
-      }));
-
-      // Save batch
-      await service.saveBatchTokens(requests);
-
-      // Verify all tokens were saved
-      expect(adapter.getActiveTokenCount()).toBe(5);
-
-      // Retrieve all tokens
-      for (const request of requests) {
-        const data = await service.getTokenData(request.token);
-        expectTokenData(data, request.data);
-      }
-
-      // Revoke some tokens
-      await service.revokeToken("batch-token-0");
-      await service.revokeToken("batch-token-2");
-
-      expect(adapter.getActiveTokenCount()).toBe(3);
-      expect(await service.getTokenData("batch-token-0")).toBeNull();
-      expect(await service.getTokenData("batch-token-1")).not.toBeNull();
-      expect(await service.getTokenData("batch-token-2")).toBeNull();
-    });
-
     it("should work with plugins throughout lifecycle", async () => {
       const auditPlugin = createMockPlugin("AuditPlugin", 50);
       const metricsPlugin = createMockPlugin("MetricsPlugin", 100);
@@ -537,12 +509,12 @@ describe("End-to-End Integration Tests", () => {
       }
 
       // Revoke session from one device
-      await service.revokeToken(tokens[0]);
+      await service.revokeToken(tokens[0]!);
 
       // Verify only that device's session was revoked
-      expect(await service.getTokenData(tokens[0])).toBeNull();
-      expect(await service.getTokenData(tokens[1])).not.toBeNull();
-      expect(await service.getTokenData(tokens[2])).not.toBeNull();
+      expect(await service.getTokenData(tokens[0]!)).toBeNull();
+      expect(await service.getTokenData(tokens[1]!)).not.toBeNull();
+      expect(await service.getTokenData(tokens[2]!)).not.toBeNull();
     });
   });
 });

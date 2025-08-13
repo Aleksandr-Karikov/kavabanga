@@ -159,27 +159,6 @@ describe("InMemoryStoreAdapter", () => {
     });
   });
 
-  describe("saveBatchTokens", () => {
-    it("should save multiple tokens", async () => {
-      const requests = [
-        createTestRequest(),
-        { ...createTestRequest(), token: "token2" },
-        { ...createTestRequest(), token: "token3" },
-      ];
-
-      await adapter.saveBatchTokens(requests);
-
-      for (const request of requests) {
-        const data = await adapter.getTokenData(request.token);
-        expect(data).toEqual(request.data);
-      }
-    });
-
-    it("should handle empty batch", async () => {
-      await expect(adapter.saveBatchTokens([])).resolves.not.toThrow();
-    });
-  });
-
   describe("isHealthy", () => {
     it("should always return true", async () => {
       const isHealthy = await adapter.isHealthy();

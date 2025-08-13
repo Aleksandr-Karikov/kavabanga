@@ -32,10 +32,6 @@ export abstract class StoreAdapterDecorator implements ITokenStoreAdapter {
     return this.wrapped.deleteToken(token);
   }
 
-  async saveBatchTokens(requests: TokenSaveRequest[]): Promise<void> {
-    return this.wrapped.saveBatchTokens(requests);
-  }
-
   async isHealthy(): Promise<boolean> {
     return this.wrapped.isHealthy();
   }

@@ -10,7 +10,6 @@ class TestDecorator extends StoreAdapterDecorator {
   public saveTokenCalled = false;
   public getTokenDataCalled = false;
   public deleteTokenCalled = false;
-  public saveBatchTokensCalled = false;
   public isHealthyCalled = false;
 
   async saveToken(request: TokenSaveRequest): Promise<void> {
@@ -26,11 +25,6 @@ class TestDecorator extends StoreAdapterDecorator {
   async deleteToken(token: string): Promise<void> {
     this.deleteTokenCalled = true;
     return super.deleteToken(token);
-  }
-
-  async saveBatchTokens(requests: TokenSaveRequest[]): Promise<void> {
-    this.saveBatchTokensCalled = true;
-    return super.saveBatchTokens(requests);
   }
 
   async isHealthy(): Promise<boolean> {
@@ -151,23 +145,6 @@ describe("StoreAdapterDecorator", () => {
       expect(data).toBeNull();
     });
 
-    it("should delegate saveBatchTokens to wrapped adapter", async () => {
-      const requests = [
-        createTestRequest(),
-        { ...createTestRequest(), token: "token2" },
-      ];
-
-      await decorator.saveBatchTokens(requests);
-
-      expect(decorator.saveBatchTokensCalled).toBe(true);
-
-      // Verify tokens were actually saved
-      for (const request of requests) {
-        const data = await baseAdapter.getTokenData(request.token);
-        expect(data).toEqual(request.data);
-      }
-    });
-
     it("should delegate isHealthy to wrapped adapter", async () => {
       const health = await decorator.isHealthy();
 
@@ -250,9 +227,6 @@ describe("StoreAdapterDecorator", () => {
         deleteToken: jest
           .fn()
           .mockRejectedValue(new Error("Base adapter error")),
-        saveBatchTokens: jest
-          .fn()
-          .mockRejectedValue(new Error("Base adapter error")),
         isHealthy: jest.fn().mockRejectedValue(new Error("Base adapter error")),
       };
 
@@ -265,9 +239,6 @@ describe("StoreAdapterDecorator", () => {
         "Base adapter error"
       );
       await expect(decorator.deleteToken("token")).rejects.toThrow(
-        "Base adapter error"
-      );
-      await expect(decorator.saveBatchTokens([])).rejects.toThrow(
         "Base adapter error"
       );
       await expect(decorator.isHealthy()).rejects.toThrow("Base adapter error");

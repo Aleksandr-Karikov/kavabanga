@@ -251,9 +251,8 @@ describe("TokenRegistryModule", () => {
 
       expect(service).toBeInstanceOf(TokenRegistryService);
     });
-
     it("should create global module when specified", async () => {
-      const moduleRef: DynamicModule = TokenRegistryModule.forRootAsync({
+      const moduleRef: typeof DynamicModule = TokenRegistryModule.forRootAsync({
         useFactory: () => ({
           storeAdapter: new InMemoryStoreAdapter(),
         }),
