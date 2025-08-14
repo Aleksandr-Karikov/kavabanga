@@ -234,30 +234,6 @@ export interface PluginExecutionContext<T extends ITokenMeta = ITokenMeta> {
   error?: Error;
 }
 
-// ===================== EXTENSION INTERFACES =====================
-
-export abstract class TokenRegistryExtension<
-  T extends ITokenMeta = ITokenMeta,
-> {
-  constructor(protected readonly service: TokenRegistryService<T>) {}
-
-  protected get adapter(): ITokenStoreAdapter {
-    return this.service.getStoreAdapter();
-  }
-
-  protected get config(): TokenRegistryConfig {
-    return this.service.getConfig();
-  }
-}
-
-// Interface for extensions with token search capability
-export interface ITokenSearchCapability {
-  /**
-   * Checks if adapter supports search
-   */
-  supportsSearch(): boolean;
-}
-
 // Forward class declaration for circular dependencies
 export declare class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   getStoreAdapter(): ITokenStoreAdapter;
