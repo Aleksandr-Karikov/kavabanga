@@ -396,3 +396,156 @@ export class TokenRegistryServiceFactory {
     return new TokenRegistryService(adapter, DEFAULT_CONFIG, validator);
   }
 }
+
+// ===================== EXTENSIBLE SERVICE =====================
+
+/**
+ * Generic extensible service that automatically exposes adapter methods
+ * This allows any adapter to extend the service with its specific methods
+ */
+export class ExtensibleTokenRegistryService<
+  T extends ITokenMeta = ITokenMeta,
+  A extends ITokenStoreAdapter = ITokenStoreAdapter,
+> extends TokenRegistryService<T> {
+  private readonly extendedAdapter: A;
+
+  constructor(
+    adapter: A,
+    config: TokenRegistryConfig,
+    validator: ITokenValidator<T>
+  ) {
+    super(adapter, config, validator);
+    this.extendedAdapter = adapter;
+  }
+
+  /**
+   * Gets the extended adapter with full type safety
+   */
+  getStoreAdapter(): A {
+    return this.extendedAdapter;
+  }
+
+  /**
+   * Proxy all adapter methods to the service
+   * This allows direct access to adapter-specific methods
+   */
+  getAdapter(): A {
+    return this.extendedAdapter;
+  }
+}
+
+/**
+ * Factory for creating extensible services
+ */
+export class ExtensibleTokenRegistryServiceFactory {
+  /**
+   * Creates new extensible service instance
+   */
+  static create<
+    T extends ITokenMeta = ITokenMeta,
+    A extends ITokenStoreAdapter = ITokenStoreAdapter,
+  >(
+    adapter: A,
+    config: TokenRegistryConfig,
+    validator: ITokenValidator<T>,
+    plugins: ITokenPlugin<T>[] = []
+  ): ExtensibleTokenRegistryService<T, A> {
+    const service = new ExtensibleTokenRegistryService(
+      adapter,
+      config,
+      validator
+    );
+
+    // Register all plugins
+    plugins.forEach((plugin) => service.registerPlugin(plugin));
+
+    return service;
+  }
+
+  /**
+   * Creates extensible service with default configuration
+   */
+  static createDefault<
+    T extends ITokenMeta = ITokenMeta,
+    A extends ITokenStoreAdapter = ITokenStoreAdapter,
+  >(
+    adapter: A,
+    validator: ITokenValidator<T>
+  ): ExtensibleTokenRegistryService<T, A> {
+    return new ExtensibleTokenRegistryService(
+      adapter,
+      DEFAULT_CONFIG,
+      validator
+    );
+  }
+}
+
+// ===================== SERVICE MIXIN PATTERN =====================
+
+/**
+ * Mixin function that extends a service with adapter-specific methods
+ * This allows any adapter to create its own extended service without modifying core
+ */
+export function withAdapterMethods<
+  T extends ITokenMeta = ITokenMeta,
+  A extends ITokenStoreAdapter = ITokenStoreAdapter,
+>(
+  BaseService: new (
+    adapter: A,
+    config: TokenRegistryConfig,
+    validator: ITokenValidator<T>
+  ) => TokenRegistryService<T>
+) {
+  return class extends BaseService {
+    private readonly extendedAdapter: A;
+
+    constructor(
+      adapter: A,
+      config: TokenRegistryConfig,
+      validator: ITokenValidator<T>
+    ) {
+      super(adapter, config, validator);
+      this.extendedAdapter = adapter;
+    }
+
+    /**
+     * Gets the extended adapter with full type safety
+     */
+    getStoreAdapter(): A {
+      return this.extendedAdapter;
+    }
+
+    /**
+     * Direct access to adapter methods
+     */
+    getAdapter(): A {
+      return this.extendedAdapter;
+    }
+
+    /**
+     * Proxy adapter methods to service
+     * This allows calling adapter methods directly on the service
+     */
+    [key: string]: any;
+  } as new (
+    adapter: A,
+    config: TokenRegistryConfig,
+    validator: ITokenValidator<T>
+  ) => TokenRegistryService<T> & {
+    getStoreAdapter(): A;
+    getAdapter(): A;
+  };
+}
+
+/**
+ * Utility type for creating service with specific adapter methods
+ */
+export type ServiceWithAdapter<
+  T extends ITokenMeta = ITokenMeta,
+  A extends ITokenStoreAdapter = ITokenStoreAdapter,
+> = TokenRegistryService<T> & {
+  getStoreAdapter(): A;
+  getAdapter(): A;
+} & {
+  [K in keyof A as A[K] extends Function ? K : never]: A[K];
+};

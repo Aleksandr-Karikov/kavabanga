@@ -239,3 +239,38 @@ export declare class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   getStoreAdapter(): ITokenStoreAdapter;
   getConfig(): TokenRegistryConfig;
 }
+
+// ===================== EXTENSIBLE SERVICE INTERFACES =====================
+
+/**
+ * Generic interface for extensible token registry services
+ * Allows adapters to extend the service with their specific methods
+ */
+export interface IExtensibleTokenRegistryService<
+  T extends ITokenMeta = ITokenMeta,
+  A extends ITokenStoreAdapter = ITokenStoreAdapter,
+> {
+  // Core methods from base service
+  saveToken(token: string, data: TokenData<T>, ttl?: number): Promise<void>;
+  getTokenData(token: string): Promise<TokenData<T> | null>;
+  revokeToken(token: string): Promise<void>;
+  getHealthStatus(): Promise<boolean>;
+  shutdown(): Promise<void>;
+
+  // Configuration and plugin management
+  getStoreAdapter(): A;
+  getConfig(): TokenRegistryConfig;
+  getRegisteredPlugins(): readonly ITokenPlugin<T>[];
+  registerPlugin(plugin: ITokenPlugin<T>): void;
+  unregisterPlugin(pluginName: string): void;
+}
+
+/**
+ * Type helper for creating extensible services
+ */
+export type ExtensibleTokenRegistryService<
+  T extends ITokenMeta = ITokenMeta,
+  A extends ITokenStoreAdapter = ITokenStoreAdapter,
+> = IExtensibleTokenRegistryService<T, A> & {
+  [K in keyof A as A[K] extends Function ? K : never]: A[K];
+};

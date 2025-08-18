@@ -3,7 +3,7 @@ import {
   createDevelopmentMemoryAdapter,
   createTestMemoryAdapter,
 } from "../../adapters/memory.adapter";
-import { TokenSaveRequest, TokenData } from "../../core/interfaces";
+import { TokenSaveRequest } from "../../core/interfaces";
 
 const createTestRequest = (): TokenSaveRequest => ({
   token: "test-token-123",

@@ -10,7 +10,13 @@ export * from "./core/validators";
 export {
   TokenRegistryService,
   TokenRegistryServiceFactory,
+  ExtensibleTokenRegistryService,
+  ExtensibleTokenRegistryServiceFactory,
+  withAdapterMethods,
 } from "./core/service";
+
+// Export types separately
+export type { ServiceWithAdapter } from "./core/service";
 
 // ===================== BASE ADAPTERS =====================
 
@@ -39,6 +45,7 @@ export type {
   TokenData,
   PluginExecutionContext,
   PluginHook,
+  IExtensibleTokenRegistryService,
 } from "./core/interfaces";
 
 // Export error classes as both types and values
