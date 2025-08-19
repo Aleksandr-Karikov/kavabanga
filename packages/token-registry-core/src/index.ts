@@ -1,67 +1,39 @@
-// ===================== CORE INTERFACES & TYPES =====================
+// ===================== CORE EXPORTS =====================
 
-// Core interfaces and types - the foundation of the token registry
-export * from "./core/interfaces";
-export * from "./core/validators";
-
-// ===================== CORE SERVICE =====================
-
-// Main service implementation
+// Main service
 export {
   TokenRegistryService,
   TokenRegistryServiceFactory,
-  ExtensibleTokenRegistryService,
-  ExtensibleTokenRegistryServiceFactory,
-  withAdapterMethods,
 } from "./core/service";
 
-// Export types separately
-export type { ServiceWithAdapter } from "./core/service";
-
-// ===================== BASE ADAPTERS =====================
-
-// Abstract base classes for implementing custom adapters
-export * from "./adapters/abstract.adapter";
-export * from "./adapters/decorator.adapter";
-
-// ===================== BUILT-IN ADAPTERS =====================
-
-// In-memory adapter for development and testing
-export * from "./adapters/memory.adapter";
-
-// ===================== NESTJS MODULE =====================
-
-// NestJS integration
-export * from "./module";
-
-// ===================== TYPE EXPORTS =====================
-
-// Export commonly used types for TypeScript users
+// Interfaces
 export type {
-  ITokenStoreAdapter,
-  ITokenPlugin,
-  ITokenMeta,
-  TokenSaveRequest,
+  ITokenStore,
+  ITokenValidator,
+  TokenEventHandler,
   TokenData,
-  PluginExecutionContext,
-  PluginHook,
-  IExtensibleTokenRegistryService,
+  TokenRegistryConfig,
+  ITokenMeta,
 } from "./core/interfaces";
 
-// Export error classes as both types and values
+// Validators
+export { DefaultTokenValidator, NoOpValidator } from "./core/validators";
+
+// Errors
 export {
   TokenRegistryError,
   TokenValidationError,
   TokenNotFoundError,
   TokenOperationError,
-  TokenConfigurationError,
   TokenTimeoutError,
 } from "./core/interfaces";
 
-// ===================== FACTORY FUNCTIONS =====================
-
-// Re-export factory functions from memory adapter
+// Stores
 export {
-  createDevelopmentMemoryAdapter,
-  createTestMemoryAdapter,
+  InMemoryStore,
+  createMemoryStore,
+  createTestMemoryStore,
 } from "./adapters/memory.adapter";
+
+// Constants
+export { DEFAULT_CONFIG } from "./core/interfaces";

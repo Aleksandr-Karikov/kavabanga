@@ -1,39 +1,36 @@
 import {
   ITokenValidator,
   ITokenMeta,
-  TokenSaveRequest,
+  TokenData,
   TokenValidationError,
   TokenRegistryConfig,
 } from "./interfaces";
 
-// ===================== DEFAULT VALIDATOR =====================
+// ===================== SIMPLIFIED VALIDATOR =====================
 
 export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
   implements ITokenValidator<T>
 {
   constructor(private readonly config: TokenRegistryConfig) {}
 
-  async validate(request: TokenSaveRequest<T>): Promise<void> {
-    await Promise.all([
-      this.validateToken(request.token),
-      this.validateTokenData(request.data),
-      this.validateTtl(request.ttl),
-    ]);
+  async validate(
+    token: string,
+    data: TokenData<T>,
+    ttl: number
+  ): Promise<void> {
+    // Validate token format
+    this.validateToken(token);
 
-    if (this.config.strictMode) {
-      await this.validateStrict(request);
-    }
+    // Validate token data structure
+    this.validateTokenData(data);
+
+    // Validate TTL
+    this.validateTtl(ttl);
   }
 
-  private async validateToken(token: string): Promise<void> {
-    if (!token) {
-      throw new TokenValidationError("Token is required");
-    }
-
-    if (typeof token !== "string") {
-      throw new TokenValidationError("Token must be a string", {
-        receivedType: typeof token,
-      });
+  private validateToken(token: string): void {
+    if (!token || typeof token !== "string") {
+      throw new TokenValidationError("Token must be a non-empty string");
     }
 
     if (token.trim().length === 0) {
@@ -56,50 +53,29 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
         }
       );
     }
-
-    // Check for invalid characters
-    if (!/^[a-zA-Z0-9._-]+$/.test(token)) {
-      throw new TokenValidationError(
-        "Token contains invalid characters (allowed: a-z, A-Z, 0-9, ., _, -)"
-      );
-    }
   }
 
-  private async validateTokenData(data: any): Promise<void> {
-    if (!data) {
-      throw new TokenValidationError("Token data is required");
+  private validateTokenData(data: any): void {
+    if (!data || typeof data !== "object") {
+      throw new TokenValidationError("Token data must be an object");
     }
 
-    if (typeof data !== "object") {
-      throw new TokenValidationError("Token data must be an object", {
-        receivedType: typeof data,
-      });
-    }
+    // Validate required fields
+    this.validateSubject(data.sub);
+    this.validateTimestamps(data.issuedAt, data.expiresAt);
+    this.validateMeta(data.meta);
 
-    // Validate sub (subject)
-    await this.validateSubject(data.sub);
-
-    // Validate timestamps
-    await this.validateTimestamps(data.issuedAt, data.expiresAt);
-
-    // Validate meta
-    await this.validateMeta(data.meta);
-
-    // Validate version (optional)
+    // Validate optional version
     if (data.version !== undefined) {
-      await this.validateVersion(data.version);
+      this.validateVersion(data.version);
     }
   }
 
-  private async validateSubject(sub: any): Promise<void> {
-    if (!sub && sub !== "") {
-      throw new TokenValidationError("Subject (sub) is required");
-    }
-
-    if (typeof sub !== "string") {
-      throw new TokenValidationError("Subject must be a string", {
-        receivedType: typeof sub,
-      });
+  private validateSubject(sub: any): void {
+    if (!sub || typeof sub !== "string") {
+      throw new TokenValidationError(
+        "Subject (sub) must be a non-empty string"
+      );
     }
 
     if (sub.trim().length === 0) {
@@ -117,50 +93,24 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
     }
   }
 
-  private async validateTimestamps(
-    issuedAt: any,
-    expiresAt: any
-  ): Promise<void> {
+  private validateTimestamps(issuedAt: any, expiresAt: any): void {
     // Validate issuedAt
-    if (issuedAt === undefined || issuedAt === null) {
-      throw new TokenValidationError("issuedAt timestamp is required");
-    }
-
     if (!Number.isInteger(issuedAt) || issuedAt <= 0) {
       throw new TokenValidationError(
-        "issuedAt must be a positive integer timestamp",
-        {
-          receivedValue: issuedAt,
-          receivedType: typeof issuedAt,
-        }
+        "issuedAt must be a positive integer timestamp"
       );
     }
 
     // Validate expiresAt
-    if (expiresAt === undefined || expiresAt === null) {
-      throw new TokenValidationError("expiresAt timestamp is required");
-    }
-
     if (!Number.isInteger(expiresAt) || expiresAt <= 0) {
       throw new TokenValidationError(
-        "expiresAt must be a positive integer timestamp",
-        {
-          receivedValue: expiresAt,
-          receivedType: typeof expiresAt,
-        }
+        "expiresAt must be a positive integer timestamp"
       );
     }
 
-    // Check logical relationship between timestamps
+    // Check logical relationship
     if (expiresAt <= issuedAt) {
-      throw new TokenValidationError(
-        "expiresAt must be greater than issuedAt",
-        {
-          issuedAt,
-          expiresAt,
-          difference: expiresAt - issuedAt,
-        }
-      );
+      throw new TokenValidationError("expiresAt must be greater than issuedAt");
     }
 
     // Check timestamp reasonableness
@@ -170,54 +120,37 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
 
     if (issuedAt < maxPastTime) {
       throw new TokenValidationError(
-        "issuedAt is too far in the past (max 24 hours)",
-        {
-          issuedAt,
-          maxPastTime,
-          issuedAtDate: new Date(issuedAt).toISOString(),
-        }
+        "issuedAt is too far in the past (max 24 hours)"
       );
     }
 
     if (expiresAt > maxFutureTime) {
       throw new TokenValidationError(
-        "expiresAt is too far in the future (max 1 year)",
-        {
-          expiresAt,
-          maxFutureTime,
-          expiresAtDate: new Date(expiresAt).toISOString(),
-        }
+        "expiresAt is too far in the future (max 1 year)"
       );
     }
   }
 
-  private async validateMeta(meta: any): Promise<void> {
-    if (!meta) {
-      throw new TokenValidationError("Meta object is required");
+  private validateMeta(meta: any): void {
+    if (!meta || typeof meta !== "object" || Array.isArray(meta)) {
+      throw new TokenValidationError("Meta must be an object");
     }
 
-    if (typeof meta !== "object" || Array.isArray(meta)) {
-      throw new TokenValidationError("Meta must be an object", {
-        receivedType: typeof meta,
-        isArray: Array.isArray(meta),
-      });
-    }
-
-    // Validate standard meta fields
+    // Validate standard meta fields if present
     if (meta.deviceId !== undefined) {
-      await this.validateDeviceId(meta.deviceId);
+      this.validateDeviceId(meta.deviceId);
     }
 
     if (meta.ipAddress !== undefined) {
-      await this.validateIpAddress(meta.ipAddress);
+      this.validateIpAddress(meta.ipAddress);
     }
 
     if (meta.userAgent !== undefined) {
-      await this.validateUserAgent(meta.userAgent);
+      this.validateUserAgent(meta.userAgent);
     }
 
     if (meta.fingerprint !== undefined) {
-      await this.validateFingerprint(meta.fingerprint);
+      this.validateFingerprint(meta.fingerprint);
     }
 
     // Check meta object size
@@ -230,11 +163,9 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
     }
   }
 
-  private async validateDeviceId(deviceId: any): Promise<void> {
+  private validateDeviceId(deviceId: any): void {
     if (typeof deviceId !== "string") {
-      throw new TokenValidationError("deviceId must be a string", {
-        receivedType: typeof deviceId,
-      });
+      throw new TokenValidationError("deviceId must be a string");
     }
 
     if (deviceId.trim().length === 0) {
@@ -251,11 +182,9 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
     }
   }
 
-  private async validateIpAddress(ipAddress: any): Promise<void> {
+  private validateIpAddress(ipAddress: any): void {
     if (typeof ipAddress !== "string") {
-      throw new TokenValidationError("ipAddress must be a string", {
-        receivedType: typeof ipAddress,
-      });
+      throw new TokenValidationError("ipAddress must be a string");
     }
 
     if (!this.isValidIpAddress(ipAddress)) {
@@ -265,11 +194,9 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
     }
   }
 
-  private async validateUserAgent(userAgent: any): Promise<void> {
+  private validateUserAgent(userAgent: any): void {
     if (typeof userAgent !== "string") {
-      throw new TokenValidationError("userAgent must be a string", {
-        receivedType: typeof userAgent,
-      });
+      throw new TokenValidationError("userAgent must be a string");
     }
 
     if (userAgent.length > 512) {
@@ -282,11 +209,9 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
     }
   }
 
-  private async validateFingerprint(fingerprint: any): Promise<void> {
+  private validateFingerprint(fingerprint: any): void {
     if (typeof fingerprint !== "string") {
-      throw new TokenValidationError("fingerprint must be a string", {
-        receivedType: typeof fingerprint,
-      });
+      throw new TokenValidationError("fingerprint must be a string");
     }
 
     if (fingerprint.length > 128) {
@@ -299,11 +224,9 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
     }
   }
 
-  private async validateVersion(version: any): Promise<void> {
+  private validateVersion(version: any): void {
     if (typeof version !== "string") {
-      throw new TokenValidationError("version must be a string", {
-        receivedType: typeof version,
-      });
+      throw new TokenValidationError("version must be a string");
     }
 
     if (version.length > 32) {
@@ -316,18 +239,10 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
     }
   }
 
-  private async validateTtl(ttl: any): Promise<void> {
-    if (ttl === undefined || ttl === null) {
-      throw new TokenValidationError("TTL is required");
-    }
-
+  private validateTtl(ttl: any): void {
     if (!Number.isInteger(ttl) || ttl <= 0) {
       throw new TokenValidationError(
-        "TTL must be a positive integer (seconds)",
-        {
-          receivedValue: ttl,
-          receivedType: typeof ttl,
-        }
+        "TTL must be a positive integer (seconds)"
       );
     }
 
@@ -349,36 +264,6 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
     }
   }
 
-  private async validateStrict(request: TokenSaveRequest<T>): Promise<void> {
-    const { token, data } = request;
-
-    // Check for future timestamps first (most critical)
-    const now = Date.now();
-    if (data.issuedAt > now + 60000) {
-      // 1 minute in the future
-      throw new TokenValidationError("issuedAt cannot be in the future", {
-        issuedAt: data.issuedAt,
-        now,
-        difference: data.issuedAt - now,
-      });
-    }
-
-    // In strict mode require mandatory fields
-    if (!data.meta.deviceId && !data.meta.ipAddress) {
-      throw new TokenValidationError(
-        "In strict mode, either deviceId or ipAddress is required in meta"
-      );
-    }
-
-    // Additional token entropy check in strict mode
-    if (!this.hasGoodEntropy(token)) {
-      throw new TokenValidationError(
-        "Token has insufficient entropy in strict mode",
-        { token: token.substring(0, 8) + "..." }
-      );
-    }
-  }
-
   private isValidIpAddress(ip: string): boolean {
     // IPv4 validation
     const ipv4Regex =
@@ -389,83 +274,6 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
 
     return ipv4Regex.test(ip) || ipv6Regex.test(ip);
   }
-
-  private hasGoodEntropy(token: string): boolean {
-    // Simple entropy check - character diversity
-    const uniqueChars = new Set(token).size;
-    const minUniqueChars = Math.min(8, Math.floor(token.length * 0.5));
-
-    return uniqueChars >= minUniqueChars;
-  }
-}
-
-// ===================== STRICT VALIDATOR =====================
-
-export class StrictTokenValidator<
-  T extends ITokenMeta = ITokenMeta,
-> extends DefaultTokenValidator<T> {
-  constructor(config: TokenRegistryConfig) {
-    super({ ...config, strictMode: true });
-  }
-
-  async validate(request: TokenSaveRequest<T>): Promise<void> {
-    await super.validate(request);
-    await this.validateStrictRequirements(request);
-  }
-
-  private async validateStrictRequirements(
-    request: TokenSaveRequest<T>
-  ): Promise<void> {
-    const { data } = request;
-
-    // Required fields in strict mode
-    if (!data.meta.deviceId) {
-      throw new TokenValidationError("deviceId is required in strict mode");
-    }
-
-    if (!data.meta.ipAddress) {
-      throw new TokenValidationError("ipAddress is required in strict mode");
-    }
-
-    if (!data.meta.userAgent) {
-      throw new TokenValidationError("userAgent is required in strict mode");
-    }
-
-    // Additional security checks
-    await this.validateSecurityRequirements(request);
-  }
-
-  private async validateSecurityRequirements(
-    request: TokenSaveRequest<T>
-  ): Promise<void> {
-    const { token, data } = request;
-
-    // Check token length for strict security first
-    if (token.length < 32) {
-      throw new TokenValidationError("Token too short for strict mode", {
-        tokenLength: token.length,
-      });
-    }
-
-    // Check for suspicious IPs
-    if (this.isSuspiciousIp(data.meta.ipAddress!)) {
-      throw new TokenValidationError("Suspicious IP address detected", {
-        ipAddress: data.meta.ipAddress,
-      });
-    }
-  }
-
-  private isSuspiciousIp(ip: string): boolean {
-    // Simple checks for suspicious IPs
-    const suspiciousPatterns = [
-      /^127\./, // localhost
-      /^10\./, // private network
-      /^192\.168\./, // private network
-      /^172\.(1[6-9]|2[0-9]|3[0-1])\./, // private network
-    ];
-
-    return suspiciousPatterns.some((pattern) => pattern.test(ip));
-  }
 }
 
 // ===================== NO-OP VALIDATOR =====================
@@ -473,7 +281,11 @@ export class StrictTokenValidator<
 export class NoOpValidator<T extends ITokenMeta = ITokenMeta>
   implements ITokenValidator<T>
 {
-  async validate(_request: TokenSaveRequest<T>): Promise<void> {
+  async validate(
+    _token: string,
+    _data: TokenData<T>,
+    _ttl: number
+  ): Promise<void> {
     // No validation
   }
 }

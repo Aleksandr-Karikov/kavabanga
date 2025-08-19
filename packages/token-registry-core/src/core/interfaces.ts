@@ -16,91 +16,61 @@ export interface TokenData<T extends ITokenMeta = ITokenMeta> {
   version?: string;
 }
 
-export interface TokenSaveRequest<T extends ITokenMeta = ITokenMeta> {
-  token: string;
-  data: TokenData<T>;
-  ttl: number;
-}
+// ===================== SIMPLIFIED STORE INTERFACE =====================
 
-// ===================== CORE STORE ADAPTER INTERFACE =====================
-
-export interface ITokenStoreAdapter {
+export interface ITokenStore {
   /**
    * Saves token with specified data and TTL
    */
-  saveToken(request: TokenSaveRequest): Promise<void>;
+  save(token: string, data: TokenData, ttl: number): Promise<void>;
 
   /**
    * Gets token data by token
    * @returns TokenData or null if token not found
    */
-  getTokenData(token: string): Promise<TokenData | null>;
+  get(token: string): Promise<TokenData | null>;
 
   /**
    * Deletes specific token
    */
-  deleteToken(token: string): Promise<void>;
+  delete(token: string): Promise<void>;
 
   /**
-   * Checks adapter health
+   * Checks store health
    */
-  isHealthy(): Promise<boolean>;
+  health(): Promise<boolean>;
 }
 
-// ===================== PLUGIN INTERFACES =====================
-
-export interface ITokenPlugin<T extends ITokenMeta = ITokenMeta> {
-  readonly name: string;
-  readonly priority: number; // Lower value = higher priority
-
-  /**
-   * Called before token saving
-   * Can modify data for saving
-   */
-  preSave?(request: TokenSaveRequest<T>): Promise<TokenSaveRequest<T>>;
-
-  /**
-   * Called after successful token saving
-   */
-  postSave?(request: TokenSaveRequest<T>): Promise<void>;
-
-  /**
-   * Called before getting token data
-   */
-  preGet?(token: string): Promise<void>;
-
-  /**
-   * Called after getting token data
-   */
-  postGet?(token: string, data: TokenData<T> | null): Promise<void>;
-
-  /**
-   * Called before token deletion
-   */
-  preRevoke?(token: string, data: TokenData<T>): Promise<void>;
-
-  /**
-   * Called after token deletion
-   */
-  postRevoke?(token: string, data: TokenData<T>): Promise<void>;
-
-  /**
-   * Called on errors
-   */
-  onError?(operation: string, error: Error, context?: any): Promise<void>;
-}
-
-// ===================== VALIDATOR INTERFACE =====================
+// ===================== SIMPLIFIED VALIDATOR INTERFACE =====================
 
 export interface ITokenValidator<T extends ITokenMeta = ITokenMeta> {
   /**
-   * Validates token save request
+   * Validates token data before saving
    * @throws TokenValidationError on validation error
    */
-  validate(request: TokenSaveRequest<T>): Promise<void>;
+  validate(token: string, data: TokenData<T>, ttl: number): Promise<void>;
 }
 
-// ===================== CONFIGURATION =====================
+// ===================== SIMPLIFIED EVENT HANDLER INTERFACE =====================
+
+export interface TokenEventHandler<T extends ITokenMeta = ITokenMeta> {
+  /**
+   * Called when token is created
+   */
+  onTokenCreated?(token: string, data: TokenData<T>): Promise<void>;
+
+  /**
+   * Called when token is accessed
+   */
+  onTokenAccessed?(token: string, data: TokenData<T>): Promise<void>;
+
+  /**
+   * Called when token is revoked
+   */
+  onTokenRevoked?(token: string, data: TokenData<T>): Promise<void>;
+}
+
+// ===================== SIMPLIFIED CONFIGURATION =====================
 
 export interface TokenRegistryConfig {
   /**
@@ -114,14 +84,9 @@ export interface TokenRegistryConfig {
   defaultTtl: number;
 
   /**
-   * Enable plugin execution
+   * Enable event handlers
    */
-  enablePlugins: boolean;
-
-  /**
-   * Strict mode - additional checks
-   */
-  strictMode: boolean;
+  enableEvents: boolean;
 
   /**
    * Operation timeout in milliseconds
@@ -132,8 +97,7 @@ export interface TokenRegistryConfig {
 export const DEFAULT_CONFIG: TokenRegistryConfig = Object.freeze({
   enableValidation: true,
   defaultTtl: 30 * 24 * 60 * 60, // 30 days in seconds
-  enablePlugins: true,
-  strictMode: false,
+  enableEvents: true,
   operationTimeout: 5000, // 5 seconds
 });
 
@@ -196,14 +160,6 @@ export class TokenOperationError extends TokenRegistryError {
   }
 }
 
-export class TokenConfigurationError extends TokenRegistryError {
-  readonly code = "CONFIGURATION_ERROR";
-
-  constructor(message: string, context?: Record<string, unknown>) {
-    super(`Configuration error: ${message}`, context);
-  }
-}
-
 export class TokenTimeoutError extends TokenRegistryError {
   readonly code = "TIMEOUT_ERROR";
 
@@ -217,60 +173,10 @@ export class TokenTimeoutError extends TokenRegistryError {
 
 // ===================== UTILITY TYPES =====================
 
-export type PluginHook =
-  | "preSave"
-  | "postSave"
-  | "preGet"
-  | "postGet"
-  | "preRevoke"
-  | "postRevoke"
-  | "onError";
-
-export interface PluginExecutionContext<T extends ITokenMeta = ITokenMeta> {
-  hook: PluginHook;
-  token?: string;
-  data?: TokenData<T>;
-  request?: TokenSaveRequest<T>;
-  error?: Error;
-}
+export type TokenOperation = "save" | "get" | "delete" | "health";
 
 // Forward class declaration for circular dependencies
 export declare class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
-  getStoreAdapter(): ITokenStoreAdapter;
+  getStore(): ITokenStore;
   getConfig(): TokenRegistryConfig;
 }
-
-// ===================== EXTENSIBLE SERVICE INTERFACES =====================
-
-/**
- * Generic interface for extensible token registry services
- * Allows adapters to extend the service with their specific methods
- */
-export interface IExtensibleTokenRegistryService<
-  T extends ITokenMeta = ITokenMeta,
-  A extends ITokenStoreAdapter = ITokenStoreAdapter,
-> {
-  // Core methods from base service
-  saveToken(token: string, data: TokenData<T>, ttl?: number): Promise<void>;
-  getTokenData(token: string): Promise<TokenData<T> | null>;
-  revokeToken(token: string): Promise<void>;
-  getHealthStatus(): Promise<boolean>;
-  shutdown(): Promise<void>;
-
-  // Configuration and plugin management
-  getStoreAdapter(): A;
-  getConfig(): TokenRegistryConfig;
-  getRegisteredPlugins(): readonly ITokenPlugin<T>[];
-  registerPlugin(plugin: ITokenPlugin<T>): void;
-  unregisterPlugin(pluginName: string): void;
-}
-
-/**
- * Type helper for creating extensible services
- */
-export type ExtensibleTokenRegistryService<
-  T extends ITokenMeta = ITokenMeta,
-  A extends ITokenStoreAdapter = ITokenStoreAdapter,
-> = IExtensibleTokenRegistryService<T, A> & {
-  [K in keyof A as A[K] extends Function ? K : never]: A[K];
-};

@@ -1,67 +1,49 @@
-import { TokenSaveRequest, TokenData } from "../core/interfaces";
-import { BaseStoreAdapter } from "./abstract.adapter";
+import { TokenData, ITokenStore } from "../core/interfaces";
 
-// ===================== IN-MEMORY ADAPTER =====================
+// ===================== SIMPLIFIED IN-MEMORY STORE =====================
 
 /**
- * In-Memory adapter for storing tokens in memory
- *
- * Simple and fast adapter for development, testing and small applications.
+ * In-Memory store for tokens
+ * Simple and fast store for development, testing and small applications.
  * Automatically deletes tokens after TTL expiration using Node.js timers.
  */
-export class InMemoryStoreAdapter extends BaseStoreAdapter {
+export class InMemoryStore implements ITokenStore {
   private readonly tokens = new Map<string, TokenData>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
 
-  async saveToken(request: TokenSaveRequest): Promise<void> {
-    try {
-      const { token, data, ttl } = request;
-      this.validateToken(token);
+  async save(token: string, data: TokenData, ttl: number): Promise<void> {
+    // Clear existing timer if any
+    this.clearExistingTimer(token);
 
-      // Clear existing timer if any
-      this.clearExistingTimer(token);
+    // Save data
+    this.tokens.set(token, data);
 
-      // Save data
-      this.tokens.set(token, data);
-
-      // Set timer for automatic deletion
-      // Cap at maximum safe timeout value (24.8 days)
-      const timeoutMs = Math.min(ttl * 1000, 2147483647);
-      const timer = setTimeout(() => {
-        this.tokens.delete(token);
-        this.timers.delete(token);
-      }, timeoutMs);
-
-      this.timers.set(token, timer);
-    } catch (error) {
-      this.handleError("saveToken", error, { token: request.token });
-    }
-  }
-
-  async getTokenData(token: string): Promise<TokenData | null> {
-    try {
-      this.validateToken(token);
-      return this.tokens.get(token) || null;
-    } catch (error) {
-      this.handleError("getTokenData", error, { token });
-    }
-  }
-
-  async deleteToken(token: string): Promise<void> {
-    try {
-      this.validateToken(token);
-
-      this.clearExistingTimer(token);
+    // Set timer for automatic deletion
+    // Cap at maximum safe timeout value (24.8 days)
+    const timeoutMs = Math.min(ttl * 1000, 2147483647);
+    const timer = setTimeout(() => {
       this.tokens.delete(token);
-    } catch (error) {
-      this.handleError("deleteToken", error, { token });
-    }
+      this.timers.delete(token);
+    }, timeoutMs);
+
+    this.timers.set(token, timer);
   }
 
-  async isHealthy(): Promise<boolean> {
-    // In-memory adapter is always healthy
+  async get(token: string): Promise<TokenData | null> {
+    return this.tokens.get(token) || null;
+  }
+
+  async delete(token: string): Promise<void> {
+    this.clearExistingTimer(token);
+    this.tokens.delete(token);
+  }
+
+  async health(): Promise<boolean> {
+    // In-memory store is always healthy
     return true;
   }
+
+  // ===================== UTILITY METHODS =====================
 
   /**
    * Gets count of active tokens (for testing/monitoring)
@@ -75,16 +57,6 @@ export class InMemoryStoreAdapter extends BaseStoreAdapter {
    */
   getActiveTokens(): string[] {
     return Array.from(this.tokens.keys());
-  }
-
-  /**
-   * Gets timer information (for debugging)
-   */
-  getTimersInfo(): Array<{ token: string; hasTimer: boolean }> {
-    return Array.from(this.tokens.keys()).map((token) => ({
-      token,
-      hasTimer: this.timers.has(token),
-    }));
   }
 
   /**
@@ -112,31 +84,6 @@ export class InMemoryStoreAdapter extends BaseStoreAdapter {
     return false;
   }
 
-  /**
-   * Gets adapter statistics
-   */
-  getStats(): {
-    totalTokens: number;
-    activeTimers: number;
-    memoryUsage: string;
-  } {
-    const totalTokens = this.tokens.size;
-    const activeTimers = this.timers.size;
-
-    // Approximate memory usage estimate
-    let memoryBytes = 0;
-    for (const [token, data] of this.tokens.entries()) {
-      memoryBytes += token.length * 2; // UTF-16
-      memoryBytes += JSON.stringify(data).length * 2;
-    }
-
-    return {
-      totalTokens,
-      activeTimers,
-      memoryUsage: this.formatBytes(memoryBytes),
-    };
-  }
-
   // ===================== PRIVATE METHODS =====================
 
   private clearExistingTimer(token: string): void {
@@ -146,44 +93,34 @@ export class InMemoryStoreAdapter extends BaseStoreAdapter {
       this.timers.delete(token);
     }
   }
-
-  private formatBytes(bytes: number): string {
-    if (bytes === 0) return "0 Bytes";
-
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  }
 }
 
 // ===================== FACTORY FUNCTIONS =====================
 
 /**
- * Creates in-memory adapter for development
+ * Creates in-memory store for development
  */
-export function createDevelopmentMemoryAdapter(): InMemoryStoreAdapter {
-  return new InMemoryStoreAdapter();
+export function createMemoryStore(): InMemoryStore {
+  return new InMemoryStore();
 }
 
 /**
- * Creates in-memory adapter for testing with additional utilities
+ * Creates in-memory store for testing with additional utilities
  */
-export function createTestMemoryAdapter(): InMemoryStoreAdapter {
-  const adapter = new InMemoryStoreAdapter();
+export function createTestMemoryStore(): InMemoryStore {
+  const store = new InMemoryStore();
 
   // Add additional methods for tests
-  (adapter as any).getAllTokensWithData = () => {
-    const entries = Array.from((adapter as any).tokens.entries()) as Array<
+  (store as any).getAllTokensWithData = () => {
+    const entries = Array.from((store as any).tokens.entries()) as Array<
       [string, any]
     >;
     return entries.map(([token, data]) => ({
       token,
       data,
-      hasTimer: (adapter as any).timers.has(token),
+      hasTimer: (store as any).timers.has(token),
     }));
   };
 
-  return adapter;
+  return store;
 }

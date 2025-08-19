@@ -1,55 +1,46 @@
 import {
-  ITokenStoreAdapter,
-  ITokenPlugin,
+  ITokenStore,
   ITokenValidator,
-  TokenSaveRequest,
+  TokenEventHandler,
   TokenData,
   TokenRegistryConfig,
   TokenOperationError,
   TokenNotFoundError,
   TokenTimeoutError,
-  TokenConfigurationError,
-  PluginHook,
-  PluginExecutionContext,
   ITokenMeta,
   TokenRegistryError,
   DEFAULT_CONFIG,
+  TokenOperation,
 } from "./interfaces";
 
 /**
- * Main service for token management
+ * Simplified token registry service
+ * Focuses on core functionality: save, get, delete tokens
  */
 export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
-  private plugins: ITokenPlugin<T>[] = [];
+  private eventHandlers: TokenEventHandler<T>[] = [];
   private isShuttingDown = false;
 
   constructor(
-    private readonly adapter: ITokenStoreAdapter,
+    private readonly store: ITokenStore,
     private readonly config: TokenRegistryConfig,
     private readonly validator: ITokenValidator<T>
   ) {}
 
   /**
-   * Registers plugin in service
+   * Registers event handler
    */
-  registerPlugin(plugin: ITokenPlugin<T>): void {
-    if (this.plugins.some((p) => p.name === plugin.name)) {
-      throw new TokenConfigurationError(
-        `Plugin with name '${plugin.name}' already registered`
-      );
-    }
-
-    this.plugins.push(plugin);
-    this.plugins.sort((a, b) => a.priority - b.priority);
+  registerEventHandler(handler: TokenEventHandler<T>): void {
+    this.eventHandlers.push(handler);
   }
 
   /**
-   * Unregisters plugin
+   * Unregisters event handler
    */
-  unregisterPlugin(pluginName: string): void {
-    const index = this.plugins.findIndex((p) => p.name === pluginName);
+  unregisterEventHandler(handler: TokenEventHandler<T>): void {
+    const index = this.eventHandlers.indexOf(handler);
     if (index !== -1) {
-      this.plugins.splice(index, 1);
+      this.eventHandlers.splice(index, 1);
     }
   }
 
@@ -69,31 +60,22 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     }
 
     const effectiveTtl = ttl ?? this.config.defaultTtl;
-    const request: TokenSaveRequest<T> = { token, data, ttl: effectiveTtl };
 
     return this.executeOperation(
-      "saveToken",
+      "save",
       async () => {
-        // Request validation
+        // Validate input
         if (this.config.enableValidation) {
-          await this.validator.validate(request);
+          await this.validator.validate(token, data, effectiveTtl);
         }
 
-        // Execute hooks before saving
-        await this.executePlugins("preSave", { request });
+        // Save to store
+        await this.store.save(token, data, effectiveTtl);
 
-        // Cast to base type for adapter
-        const baseRequest: TokenSaveRequest = {
-          token: request.token,
-          data: request.data as TokenData<ITokenMeta>,
-          ttl: request.ttl,
-        };
-
-        // Save through adapter
-        await this.adapter.saveToken(baseRequest);
-
-        // Execute hooks after saving
-        await this.executePlugins("postSave", { request });
+        // Notify event handlers
+        if (this.config.enableEvents) {
+          await this.notifyEventHandlers("onTokenCreated", token, data);
+        }
       },
       { token }
     );
@@ -111,24 +93,19 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     }
 
     return this.executeOperation(
-      "getTokenData",
+      "get",
       async () => {
-        // Execute hooks before getting
-        await this.executePlugins("preGet", { token });
+        const data = await this.store.get(token);
 
-        // Get data through adapter
-        const data = await this.adapter.getTokenData(token);
+        if (data && this.config.enableEvents) {
+          await this.notifyEventHandlers(
+            "onTokenAccessed",
+            token,
+            data as TokenData<T>
+          );
+        }
 
-        // Cast to generic type with validation
-        const typedData = data ? this.castTokenData<T>(data) : null;
-
-        // Execute hooks after getting
-        await this.executePlugins("postGet", {
-          token,
-          data: typedData || undefined,
-        });
-
-        return typedData;
+        return data as TokenData<T> | null;
       },
       { token }
     );
@@ -146,28 +123,25 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     }
 
     return this.executeOperation(
-      "revokeToken",
+      "delete",
       async () => {
-        // First get token data for hooks
-        const data = await this.getTokenData(token);
+        // Get token data for event handlers
+        const data = await this.store.get(token);
         if (!data) {
           throw new TokenNotFoundError(token);
         }
 
-        // Execute hooks before deletion
-        await this.executePlugins("preRevoke", {
-          token,
-          data,
-        });
+        // Delete from store
+        await this.store.delete(token);
 
-        // Delete through adapter
-        await this.adapter.deleteToken(token);
-
-        // Execute hooks after deletion
-        await this.executePlugins("postRevoke", {
-          token,
-          data,
-        });
+        // Notify event handlers
+        if (this.config.enableEvents) {
+          await this.notifyEventHandlers(
+            "onTokenRevoked",
+            token,
+            data as TokenData<T>
+          );
+        }
       },
       { token }
     );
@@ -178,9 +152,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
    */
   async getHealthStatus(): Promise<boolean> {
     try {
-      return await this.executeOperation("isHealthy", () =>
-        this.adapter.isHealthy()
-      );
+      return await this.executeOperation("health", () => this.store.health());
     } catch {
       return false;
     }
@@ -196,24 +168,24 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   }
 
   /**
-   * Gets current store adapter (for extensions)
+   * Gets current store
    */
-  getStoreAdapter(): ITokenStoreAdapter {
-    return this.adapter;
+  getStore(): ITokenStore {
+    return this.store;
   }
 
   /**
-   * Gets current configuration (for extensions)
+   * Gets current configuration
    */
   getConfig(): TokenRegistryConfig {
     return this.config;
   }
 
   /**
-   * Gets list of registered plugins
+   * Gets list of registered event handlers
    */
-  getRegisteredPlugins(): readonly ITokenPlugin<T>[] {
-    return [...this.plugins];
+  getRegisteredEventHandlers(): readonly TokenEventHandler<T>[] {
+    return [...this.eventHandlers];
   }
 
   // ===================== PRIVATE METHODS =====================
@@ -222,7 +194,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
    * Executes operation with error handling and timeout
    */
   private async executeOperation<R>(
-    operation: string,
+    operation: TokenOperation,
     fn: () => Promise<R>,
     context?: Record<string, unknown>
   ): Promise<R> {
@@ -236,18 +208,6 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
       }
       return await fn();
     } catch (error) {
-      // Notify plugins about error
-      if (this.config.enablePlugins) {
-        await Promise.all(
-          this.plugins.map((plugin) => {
-            if (plugin.onError) {
-              return plugin.onError(operation, error as Error, context);
-            }
-            return Promise.resolve();
-          })
-        );
-      }
-
       // Re-throw TokenRegistry errors as is
       if (error instanceof TokenRegistryError) {
         throw error;
@@ -277,91 +237,24 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   }
 
   /**
-   * Executes plugin hooks
+   * Notifies event handlers
    */
-  private async executePlugins(
-    hook: Exclude<PluginHook, "onError">,
-    context: Omit<PluginExecutionContext<T>, "hook">
+  private async notifyEventHandlers(
+    event: keyof TokenEventHandler<T>,
+    token: string,
+    data: TokenData<T>
   ): Promise<void> {
-    if (!this.config.enablePlugins) return;
-
-    const fullContext: PluginExecutionContext<T> = {
-      ...context,
-      hook,
-    };
-
-    for (const plugin of this.plugins) {
-      const pluginFn = plugin[hook];
-      if (typeof pluginFn === "function") {
-        try {
-          // Fix plugin call depending on hook
-          switch (hook) {
-            case "preSave":
-              if (context.request && pluginFn === plugin.preSave) {
-                await plugin.preSave!(context.request);
-              }
-              break;
-            case "postSave":
-              if (context.request && pluginFn === plugin.postSave) {
-                await plugin.postSave!(context.request);
-              }
-              break;
-            case "preGet":
-              if (context.token && pluginFn === plugin.preGet) {
-                await plugin.preGet!(context.token);
-              }
-              break;
-            case "postGet":
-              if (context.token && pluginFn === plugin.postGet) {
-                await plugin.postGet!(context.token, context.data || null);
-              }
-              break;
-            case "preRevoke":
-              if (
-                context.token &&
-                context.data &&
-                pluginFn === plugin.preRevoke
-              ) {
-                await plugin.preRevoke!(context.token, context.data);
-              }
-              break;
-            case "postRevoke":
-              if (
-                context.token &&
-                context.data &&
-                pluginFn === plugin.postRevoke
-              ) {
-                await plugin.postRevoke!(context.token, context.data);
-              }
-              break;
-          }
-        } catch (error) {
-          console.error(
-            `Error in plugin '${plugin.name}' during '${hook}':`,
-            error
-          );
-
-          // Notify plugin about error
-          if (plugin.onError) {
-            await plugin.onError(hook, error as Error, fullContext);
-          }
-
-          // In production can throw error or continue
-          // Depending on plugin error handling strategy
-        }
+    const promises = this.eventHandlers.map((handler) => {
+      const handlerFn = handler[event];
+      if (typeof handlerFn === "function") {
+        return handlerFn(token, data).catch((error) => {
+          console.error(`Error in event handler during '${event}':`, error);
+        });
       }
-    }
-  }
+      return Promise.resolve();
+    });
 
-  /**
-   * Casts token data to required generic type
-   */
-  private castTokenData<T extends ITokenMeta>(
-    data: TokenData<ITokenMeta>
-  ): TokenData<T> {
-    // Here additional structure validation can be added
-    // if needed in the future
-    return data as unknown as TokenData<T>;
+    await Promise.all(promises);
   }
 }
 
@@ -373,15 +266,15 @@ export class TokenRegistryServiceFactory {
    * Creates new service instance with specified parameters
    */
   static create<T extends ITokenMeta = ITokenMeta>(
-    adapter: ITokenStoreAdapter,
+    store: ITokenStore,
     config: TokenRegistryConfig,
     validator: ITokenValidator<T>,
-    plugins: ITokenPlugin<T>[] = []
+    eventHandlers: TokenEventHandler<T>[] = []
   ): TokenRegistryService<T> {
-    const service = new TokenRegistryService(adapter, config, validator);
+    const service = new TokenRegistryService(store, config, validator);
 
-    // Register all plugins
-    plugins.forEach((plugin) => service.registerPlugin(plugin));
+    // Register all event handlers
+    eventHandlers.forEach((handler) => service.registerEventHandler(handler));
 
     return service;
   }
@@ -390,162 +283,9 @@ export class TokenRegistryServiceFactory {
    * Creates service with default configuration
    */
   static createDefault<T extends ITokenMeta = ITokenMeta>(
-    adapter: ITokenStoreAdapter,
+    store: ITokenStore,
     validator: ITokenValidator<T>
   ): TokenRegistryService<T> {
-    return new TokenRegistryService(adapter, DEFAULT_CONFIG, validator);
+    return new TokenRegistryService(store, DEFAULT_CONFIG, validator);
   }
 }
-
-// ===================== EXTENSIBLE SERVICE =====================
-
-/**
- * Generic extensible service that automatically exposes adapter methods
- * This allows any adapter to extend the service with its specific methods
- */
-export class ExtensibleTokenRegistryService<
-  T extends ITokenMeta = ITokenMeta,
-  A extends ITokenStoreAdapter = ITokenStoreAdapter,
-> extends TokenRegistryService<T> {
-  private readonly extendedAdapter: A;
-
-  constructor(
-    adapter: A,
-    config: TokenRegistryConfig,
-    validator: ITokenValidator<T>
-  ) {
-    super(adapter, config, validator);
-    this.extendedAdapter = adapter;
-  }
-
-  /**
-   * Gets the extended adapter with full type safety
-   */
-  getStoreAdapter(): A {
-    return this.extendedAdapter;
-  }
-
-  /**
-   * Proxy all adapter methods to the service
-   * This allows direct access to adapter-specific methods
-   */
-  getAdapter(): A {
-    return this.extendedAdapter;
-  }
-}
-
-/**
- * Factory for creating extensible services
- */
-export class ExtensibleTokenRegistryServiceFactory {
-  /**
-   * Creates new extensible service instance
-   */
-  static create<
-    T extends ITokenMeta = ITokenMeta,
-    A extends ITokenStoreAdapter = ITokenStoreAdapter,
-  >(
-    adapter: A,
-    config: TokenRegistryConfig,
-    validator: ITokenValidator<T>,
-    plugins: ITokenPlugin<T>[] = []
-  ): ExtensibleTokenRegistryService<T, A> {
-    const service = new ExtensibleTokenRegistryService(
-      adapter,
-      config,
-      validator
-    );
-
-    // Register all plugins
-    plugins.forEach((plugin) => service.registerPlugin(plugin));
-
-    return service;
-  }
-
-  /**
-   * Creates extensible service with default configuration
-   */
-  static createDefault<
-    T extends ITokenMeta = ITokenMeta,
-    A extends ITokenStoreAdapter = ITokenStoreAdapter,
-  >(
-    adapter: A,
-    validator: ITokenValidator<T>
-  ): ExtensibleTokenRegistryService<T, A> {
-    return new ExtensibleTokenRegistryService(
-      adapter,
-      DEFAULT_CONFIG,
-      validator
-    );
-  }
-}
-
-// ===================== SERVICE MIXIN PATTERN =====================
-
-/**
- * Mixin function that extends a service with adapter-specific methods
- * This allows any adapter to create its own extended service without modifying core
- */
-export function withAdapterMethods<
-  T extends ITokenMeta = ITokenMeta,
-  A extends ITokenStoreAdapter = ITokenStoreAdapter,
->(
-  BaseService: new (
-    adapter: A,
-    config: TokenRegistryConfig,
-    validator: ITokenValidator<T>
-  ) => TokenRegistryService<T>
-) {
-  return class extends BaseService {
-    private readonly extendedAdapter: A;
-
-    constructor(
-      adapter: A,
-      config: TokenRegistryConfig,
-      validator: ITokenValidator<T>
-    ) {
-      super(adapter, config, validator);
-      this.extendedAdapter = adapter;
-    }
-
-    /**
-     * Gets the extended adapter with full type safety
-     */
-    getStoreAdapter(): A {
-      return this.extendedAdapter;
-    }
-
-    /**
-     * Direct access to adapter methods
-     */
-    getAdapter(): A {
-      return this.extendedAdapter;
-    }
-
-    /**
-     * Proxy adapter methods to service
-     * This allows calling adapter methods directly on the service
-     */
-    [key: string]: any;
-  } as new (
-    adapter: A,
-    config: TokenRegistryConfig,
-    validator: ITokenValidator<T>
-  ) => TokenRegistryService<T> & {
-    getStoreAdapter(): A;
-    getAdapter(): A;
-  };
-}
-
-/**
- * Utility type for creating service with specific adapter methods
- */
-export type ServiceWithAdapter<
-  T extends ITokenMeta = ITokenMeta,
-  A extends ITokenStoreAdapter = ITokenStoreAdapter,
-> = TokenRegistryService<T> & {
-  getStoreAdapter(): A;
-  getAdapter(): A;
-} & {
-  [K in keyof A as A[K] extends Function ? K : never]: A[K];
-};
