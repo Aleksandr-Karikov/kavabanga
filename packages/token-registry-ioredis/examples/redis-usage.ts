@@ -71,16 +71,6 @@ async function redisUsageExample() {
     `Redis health status: ${isHealthy ? "✅ Healthy" : "❌ Unhealthy"}`
   );
 
-  // 7. Use Redis-specific methods
-  console.log("\n🔍 Getting user tokens from Redis...");
-  const userTokens = await store.getUserTokens("user123");
-  console.log(`Found ${userTokens.length} tokens for user123`);
-
-  // 8. Get active token count
-  console.log("\n📊 Getting active token count...");
-  const activeCount = await store.getActiveTokenCount();
-  console.log(`Active tokens in Redis: ${activeCount}`);
-
   // 9. Revoke token
   console.log("\n🗑️ Revoking token from Redis...");
   await tokenRegistry.revokeToken(token);
