@@ -11,4 +11,9 @@ export const envValidationSchema = Joi.object({
 
   JWT_ACCESS_SECRET: Joi.string().required(),
   COOKIE_SECRET: Joi.string().required(),
+
+  REFRESH_TOKEN_STORE_PREFIX: Joi.string().optional(),
+  REFRESH_TOKEN_TTL: Joi.number().optional(),
+  TOKEN_EVENTS_ENABLED: Joi.bool().optional(),
+  TOKEN_VALIDATION_ENABLED: Joi.bool().optional(),
 });

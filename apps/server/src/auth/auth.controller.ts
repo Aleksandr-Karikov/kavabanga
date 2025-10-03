@@ -145,7 +145,7 @@ export class AuthController {
     const refreshToken = req.cookies?.[this.REFRESH_COOKIE_NAME];
     try {
       if (refreshToken)
-        await this.authService.logout(refreshToken, req.user.user.uuid);
+        await this.authService.logout(refreshToken);
     } catch (e) {
       this.logger.error(`Logout failed: ${e.message}`, e.stack);
     } finally {

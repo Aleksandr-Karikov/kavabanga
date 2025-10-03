@@ -1,7 +1,7 @@
 import { Inject } from "@nestjs/common";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Injectable, Logger } from "@nestjs/common";
-import * as CircuitBreaker from "opossum";
+import CircuitBreaker from "opossum";
 import { IErrorClassifier } from "./error-classifier.interface";
 
 @Injectable()

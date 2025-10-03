@@ -49,7 +49,9 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
    */
   async saveToken(
     token: string,
-    data: TokenData<T>,
+    data: Omit<TokenData<T>, "expiresAt" | "issuedAt"> & {
+      issuedAt?: TokenData["issuedAt"];
+    },
     ttl?: number
   ): Promise<void> {
     if (this.isShuttingDown) {
@@ -60,21 +62,32 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     }
 
     const effectiveTtl = ttl ?? this.config.defaultTtl;
+    const now = Math.floor(Date.now() / 1000);
+
+    const completeTokenData: TokenData<T> = {
+      ...data,
+      expiresAt: now + effectiveTtl,
+      issuedAt: data.issuedAt ?? now,
+    };
 
     return this.executeOperation(
       "save",
       async () => {
         // Validate input
         if (this.config.enableValidation) {
-          await this.validator.validate(token, data, effectiveTtl);
+          await this.validator.validate(token, completeTokenData, effectiveTtl);
         }
 
         // Save to store
-        await this.store.save(token, data, effectiveTtl);
+        await this.store.save(token, completeTokenData, effectiveTtl);
 
         // Notify event handlers
         if (this.config.enableEvents) {
-          await this.notifyEventHandlers("onTokenCreated", token, data);
+          await this.notifyEventHandlers(
+            "onTokenCreated",
+            token,
+            completeTokenData
+          );
         }
       },
       { token }

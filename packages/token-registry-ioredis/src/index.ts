@@ -17,13 +17,4 @@ export function createIoredisStore(
 ): IoredisStore {
   return new IoredisStore(redis, options);
 }
-
-/**
- * Creates a new IoredisStore instance with custom key prefix
- */
-export function createIoredisStoreWithPrefix(
-  redis: Redis | Cluster,
-  keyPrefix: string
-): IoredisStore {
-  return new IoredisStore(redis, { keyPrefix });
-}
+export * from "ioredis";

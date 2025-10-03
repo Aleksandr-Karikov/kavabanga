@@ -17,7 +17,7 @@
       "forceConsistentCasingInFileNames": false,
       "noFallthroughCasesInSwitch": false,
       "inlineSources": true,
-  
+      "esModuleInterop": true,
       "sourceRoot": "/"
     }
   }

@@ -47,11 +47,3 @@ export {
   createMemoryStore,
   InMemoryStore,
 } from "@kavabanga/token-registry-core";
-
-// ===================== RE-EXPORTS FROM IOREDIS =====================
-
-export type { IoredisStoreOptions } from "@kavabanga/token-registry-ioredis";
-export {
-  IoredisStore,
-  createIoredisStore,
-} from "@kavabanga/token-registry-ioredis";

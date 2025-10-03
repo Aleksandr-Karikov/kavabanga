@@ -1,9 +1,12 @@
+import {
+  InjectTokenRegistry,
+  TokenRegistryService,
+} from "@kavabanga/token-registry-nest";
 import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { PassportStrategy } from "@nestjs/passport";
 import { FastifyRequest } from "fastify";
 import { Strategy } from "passport-custom";
 import { RefreshUser } from "src/auth/auth.types";
-import { RefreshTokenStore } from "src/auth/refresh-token/refresh-token.store";
 import { UsersService } from "src/users/users.service";
 
 @Injectable()
@@ -12,8 +15,9 @@ export class RefreshStrategy extends PassportStrategy(
   "refresh-token"
 ) {
   constructor(
-    private readonly tokenStore: RefreshTokenStore,
-    private readonly usersService: UsersService
+    private readonly usersService: UsersService,
+    @InjectTokenRegistry()
+    private readonly tokenRegistry: TokenRegistryService
   ) {
     super();
   }
@@ -28,7 +32,7 @@ export class RefreshStrategy extends PassportStrategy(
       });
     }
 
-    const tokenData = await this.tokenStore.getTokenData(refreshToken);
+    const tokenData = await this.tokenRegistry.getTokenData(refreshToken);
 
     if (!tokenData) {
       throw new UnauthorizedException({
@@ -37,14 +41,7 @@ export class RefreshStrategy extends PassportStrategy(
       });
     }
 
-    if (tokenData.used) {
-      throw new UnauthorizedException({
-        error: "UsedRefreshToken",
-        message: "Token was already used",
-      });
-    }
-
-    const user = await this.usersService.findByUUID(tokenData.userId);
+    const user = await this.usersService.findByUUID(tokenData.sub);
 
     if (!user) {
       throw new UnauthorizedException({
@@ -53,6 +50,6 @@ export class RefreshStrategy extends PassportStrategy(
       });
     }
 
-    return { user, refreshToken, deviceId: tokenData.deviceId };
+    return { user, refreshToken, deviceId: tokenData.meta.deviceId };
   }
 }

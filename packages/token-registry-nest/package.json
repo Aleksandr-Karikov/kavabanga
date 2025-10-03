@@ -23,12 +23,10 @@
     "directory": "packages/token-registry-nest"
   },
   "dependencies": {
-    "@nestjs/common": "^11.0.1",
-    "@nestjs/core": "^11.0.1"
+    "@kavabanga/token-registry-core": "*"
   },
   "peerDependencies": {
-    "@kavabanga/token-registry-core": "workspace:*",
-    "@kavabanga/token-registry-ioredis": "workspace:*"
+    "@nestjs/core": "^11.0.1"
   },
   "devDependencies": {
     "@kavabanga/typescript-config": "*",
@@ -36,7 +34,8 @@
     "@types/jest": "^29.5.12",
     "jest": "^29.7.0",
     "ts-jest": "^29.1.2",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "@nestjs/common": "^11.0.1"
   },
   "scripts": {
     "build": "tsc",

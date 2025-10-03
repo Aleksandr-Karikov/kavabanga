@@ -13,7 +13,6 @@ export interface TokenData<T extends ITokenMeta = ITokenMeta> {
   issuedAt: number;
   expiresAt: number;
   meta: T;
-  version?: string;
 }
 
 // ===================== SIMPLIFIED STORE INTERFACE =====================

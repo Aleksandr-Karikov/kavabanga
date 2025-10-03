@@ -4,14 +4,19 @@ import { User } from "src/users/user.entity";
 import { UsersService } from "src/users/users.service";
 import * as bcrypt from "bcrypt";
 import { v7 } from "uuid";
-import { RefreshTokenStore } from "./refresh-token/refresh-token.store";
 import crypto from "crypto";
+import {
+  InjectTokenRegistry,
+  TokenRegistryService,
+} from "@kavabanga/token-registry-nest";
+
 @Injectable()
 export class AuthService {
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
-    private tokenStore: RefreshTokenStore
+    @InjectTokenRegistry()
+    private readonly tokenRegistry: TokenRegistryService
   ) {}
 
   async validateUserPassword(
@@ -38,13 +43,13 @@ export class AuthService {
     user: User,
     deviceId?: string
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    await this.tokenStore.markUsed(oldToken, user.uuid);
+    await this.tokenRegistry.revokeToken(oldToken);
 
     return this.login(user, deviceId);
   }
 
-  async logout(refreshToken: string, userUuid: User["uuid"]) {
-    await this.tokenStore.delete(refreshToken, userUuid);
+  async logout(refreshToken: string) {
+    await this.tokenRegistry.revokeToken(refreshToken);
   }
 
   async login(user: User, deviceId?: string) {
@@ -54,9 +59,11 @@ export class AuthService {
     const refreshToken = crypto.randomBytes(32).toString("hex");
     const resolvedDeviceId = deviceId ?? v7();
 
-    await this.tokenStore.save(refreshToken, {
-      userId: user.uuid,
-      deviceId: resolvedDeviceId,
+    await this.tokenRegistry.saveToken(refreshToken, {
+      sub: user.uuid,
+      meta: {
+        deviceId: resolvedDeviceId,
+      },
     });
 
     return {

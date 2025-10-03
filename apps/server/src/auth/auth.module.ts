@@ -9,7 +9,8 @@ import { LocalStrategy } from "./strategies/local-strategy/local.strategy";
 import { RefreshStrategy } from "./strategies/refresh-strategy/refresh.strategy";
 import { ConfigService } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
-import { RefreshTokenModule } from "./refresh-token/refresh-token.module";
+import { TokenRegistryModule } from "@kavabanga/token-registry-nest";
+import { createIoredisStore, Redis } from "@kavabanga/token-registry-ioredis";
 
 @Module({
   imports: [
@@ -26,16 +27,26 @@ import { RefreshTokenModule } from "./refresh-token/refresh-token.module";
       },
       inject: [ConfigService],
     }),
-    ScheduleModule.forRoot(),
-    RefreshTokenModule.forRoot({
-      config: {
-        ttl: 7 * 24 * 60 * 60, // 7 days
-        usedTokenTtl: 5 * 60, // 5 minutes
-        maxDevicesPerUser: 5,
-        enableScheduledCleanup: true,
-      },
-      enabledCircuitBreaker: true,
+    TokenRegistryModule.forRootAsync({
+      useFactory: (configService: ConfigService) => ({
+        storeFactory: () => {
+          const redis = new Redis(configService.get<string>("REDIS_URL"));
+          return createIoredisStore(redis, {
+            keyPrefix: configService.get<string>("REFRESH_TOKEN_STORE_PREFIX", "tokens"),
+          });
+        },
+        config: {
+          defaultTtl: configService.get<number>("REFRESH_TOKEN_TTL", 30 * 24 * 60 * 60),
+          enableValidation: configService.get<boolean>(
+            "TOKEN_VALIDATION_ENABLED",
+            true
+          ),
+          enableEvents: configService.get<boolean>("TOKEN_EVENTS_ENABLED", true),
+        },
+      }),
+      inject: [ConfigService],
     }),
+    ScheduleModule.forRoot(),
   ],
   providers: [AuthService, LocalStrategy, JwtStrategy, RefreshStrategy],
   controllers: [AuthController],
