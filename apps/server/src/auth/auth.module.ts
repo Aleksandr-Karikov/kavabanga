@@ -52,5 +52,4 @@ import { createIoredisStore, Redis } from "@kavabanga/token-registry-ioredis";
   controllers: [AuthController],
   exports: [AuthService],
 })
-// eslint-disable-next-line @typescript-eslint/no-extraneous-class
 export class AuthModule {}

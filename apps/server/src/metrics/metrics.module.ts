@@ -69,5 +69,4 @@ import { MetricsService } from "src/metrics/metrics.service";
   controllers: [MetricsController],
   exports: [PrometheusModule, MetricsService],
 })
-// eslint-disable-next-line @typescript-eslint/no-extraneous-class
 export class MetricsModule {}
