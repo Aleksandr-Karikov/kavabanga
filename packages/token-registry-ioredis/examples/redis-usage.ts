@@ -218,7 +218,6 @@ async function errorHandlingExample() {
     await tokenRegistry.saveToken("test-token", {
       sub: "user123",
       issuedAt: Date.now(),
-      expiresAt: Date.now() + 3600000,
       meta: { deviceId: "device123" },
     });
   } catch (error) {

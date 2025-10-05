@@ -62,7 +62,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     }
 
     const effectiveTtl = ttl ?? this.config.defaultTtl;
-    const now = Math.floor(Date.now() / 1000);
+    const now = Date.now();
 
     const completeTokenData: TokenData<T> = {
       ...data,
