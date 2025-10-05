@@ -5,7 +5,6 @@ import {
   makeHistogramProvider,
   makeGaugeProvider,
 } from "@willsoto/nestjs-prometheus";
-import { MetricsController } from "./metrics.controller";
 import { MetricsService } from "src/metrics/metrics.service";
 
 @Module({
@@ -66,7 +65,7 @@ import { MetricsService } from "src/metrics/metrics.service";
       labelNames: ["error_type"] as const,
     }),
   ],
-  controllers: [MetricsController],
+  controllers: [],
   exports: [PrometheusModule, MetricsService],
 })
 export class MetricsModule {}
