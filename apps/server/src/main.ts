@@ -45,6 +45,7 @@ async function bootstrap() {
   SwaggerModule.setup("api", app, documentFactory, {
     jsonDocumentUrl: "swagger/json",
   });
+  const server = app.getHttpAdapter();
 
   await app.listen(3010);
 }
