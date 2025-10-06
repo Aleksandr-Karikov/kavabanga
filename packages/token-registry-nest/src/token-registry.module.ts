@@ -40,32 +40,42 @@ export class TokenRegistryModule {
       exports: [TOKEN_REGISTRY_SERVICE],
     };
   }
-
   private static createProviders(
     options: TokenRegistryModuleOptions
   ): Provider[] {
-    const config: TokenRegistryConfig = {
+    const finalConfig: TokenRegistryConfig = {
       ...DEFAULT_CONFIG,
-      ...options.config,
+      ...(options.config || {}),
     };
 
     return [
       {
         provide: TOKEN_REGISTRY_MODULE_OPTIONS,
         useValue: {
-          config,
+          config: finalConfig,
           storeFactory: options.storeFactory,
         },
       },
       {
         provide: TOKEN_REGISTRY_SERVICE,
-        useFactory: async (moduleOptions: any) => {
+        useFactory: async (moduleOptions: TokenRegistryModuleOptions) => {
           const store = moduleOptions.storeFactory
             ? await moduleOptions.storeFactory()
             : createMemoryStore();
 
-          const validator = new DefaultTokenValidator(moduleOptions.config);
-          return TokenRegistryServiceFactory.createDefault(store, validator);
+          const finalConfig: TokenRegistryConfig = {
+            ...DEFAULT_CONFIG,
+            ...(moduleOptions.config || {}),
+          };
+
+          const validator = new DefaultTokenValidator(finalConfig);
+
+          return TokenRegistryServiceFactory.create(
+            store,
+            finalConfig,
+            validator,
+            []
+          );
         },
         inject: [TOKEN_REGISTRY_MODULE_OPTIONS],
       },
@@ -83,18 +93,25 @@ export class TokenRegistryModule {
       },
       {
         provide: TOKEN_REGISTRY_SERVICE,
-        useFactory: async (moduleOptions: any) => {
-          const config: TokenRegistryConfig = {
+        useFactory: async (moduleOptions: TokenRegistryModuleOptions) => {
+          console.log("moduleOptions", moduleOptions);
+          const finalConfig: TokenRegistryConfig = {
             ...DEFAULT_CONFIG,
-            ...moduleOptions.config,
+            ...(moduleOptions.config || {}),
           };
 
           const store = moduleOptions.storeFactory
             ? await moduleOptions.storeFactory()
             : createMemoryStore();
 
-          const validator = new DefaultTokenValidator(config);
-          return TokenRegistryServiceFactory.createDefault(store, validator);
+          const validator = new DefaultTokenValidator(finalConfig);
+
+          return TokenRegistryServiceFactory.create(
+            store,
+            finalConfig,
+            validator,
+            []
+          );
         },
         inject: [TOKEN_REGISTRY_MODULE_OPTIONS],
       },

@@ -35,10 +35,9 @@ async function redisUsageExample() {
 
   // 4. Save a token
   const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.token";
-  const tokenData: TokenData = {
+  const tokenData = {
     sub: "user123",
     issuedAt: Date.now(),
-    expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days
     meta: {
       deviceId: "device456",
       ipAddress: "192.168.1.1",

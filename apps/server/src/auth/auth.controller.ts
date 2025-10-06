@@ -25,15 +25,15 @@ import { ConfigService } from "@nestjs/config";
 @Controller("auth")
 export class AuthController {
   private readonly REFRESH_COOKIE_NAME = "refreshToken";
-  private readonly REFRESH_TOKEN_TTL;
+  private readonly REFRESH_TOKEN_TTL_SECONDS;
   private readonly logger: LoggerService = new Logger(AuthController.name);
 
   constructor(
     private readonly authService: AuthService,
     configService: ConfigService
   ) {
-    this.REFRESH_TOKEN_TTL = configService.get<number>(
-      "REFRESH_TOKEN_TTL"
+    this.REFRESH_TOKEN_TTL_SECONDS = configService.get<number>(
+      "REFRESH_TOKEN_TTL_SECONDS"
     );
   }
 
@@ -41,8 +41,11 @@ export class AuthController {
     res: FastifyReply,
     refreshToken: string
   ) {
+    this.logger.debug(
+      `Set refresh cookie with maxAta: ${this.REFRESH_TOKEN_TTL_SECONDS}`
+    );
     res.setCookie(this.REFRESH_COOKIE_NAME, refreshToken, {
-      maxAge: this.REFRESH_TOKEN_TTL * 24 * 60 * 60,
+      maxAge: this.REFRESH_TOKEN_TTL_SECONDS,
       httpOnly: true,
       sameSite: "strict",
     });
@@ -144,8 +147,7 @@ export class AuthController {
   async logout(@Req() req, @Res() res: FastifyReply) {
     const refreshToken = req.cookies?.[this.REFRESH_COOKIE_NAME];
     try {
-      if (refreshToken)
-        await this.authService.logout(refreshToken);
+      if (refreshToken) await this.authService.logout(refreshToken);
     } catch (e) {
       this.logger.error(`Logout failed: ${e.message}`, e.stack);
     } finally {

@@ -127,7 +127,6 @@ export class AuthService {
     const tokenData: TokenData<CustomTokenMeta> = {
       sub: userId,
       issuedAt: Date.now(),
-      expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 дней
       meta,
     };
 

@@ -51,6 +51,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     token: string,
     data: Omit<TokenData<T>, "expiresAt" | "issuedAt"> & {
       issuedAt?: TokenData["issuedAt"];
+      expiresAt?: TokenData["expiresAt"];
     },
     ttl?: number
   ): Promise<void> {
@@ -66,7 +67,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
 
     const completeTokenData: TokenData<T> = {
       ...data,
-      expiresAt: now + effectiveTtl,
+      expiresAt: data.expiresAt ?? now + effectiveTtl * 1000,
       issuedAt: data.issuedAt ?? now,
     };
 

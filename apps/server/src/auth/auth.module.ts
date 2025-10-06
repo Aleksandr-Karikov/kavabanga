@@ -32,16 +32,22 @@ import { createIoredisStore, Redis } from "@kavabanga/token-registry-ioredis";
         storeFactory: () => {
           const redis = new Redis(configService.get<string>("REDIS_URL"));
           return createIoredisStore(redis, {
-            keyPrefix: configService.get<string>("REFRESH_TOKEN_STORE_PREFIX", "tokens"),
+            keyPrefix: configService.get<string>(
+              "REFRESH_TOKEN_STORE_PREFIX",
+              "tokens"
+            ),
           });
         },
         config: {
-          defaultTtl: configService.get<number>("REFRESH_TOKEN_TTL", 30 * 24 * 60 * 60),
+          defaultTtl: configService.get<number>("REFRESH_TOKEN_TTL_SECONDS"),
           enableValidation: configService.get<boolean>(
             "TOKEN_VALIDATION_ENABLED",
             true
           ),
-          enableEvents: configService.get<boolean>("TOKEN_EVENTS_ENABLED", true),
+          enableEvents: configService.get<boolean>(
+            "TOKEN_EVENTS_ENABLED",
+            true
+          ),
         },
       }),
       inject: [ConfigService],

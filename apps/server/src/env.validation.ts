@@ -13,7 +13,9 @@ export const envValidationSchema = Joi.object({
   COOKIE_SECRET: Joi.string().required(),
 
   REFRESH_TOKEN_STORE_PREFIX: Joi.string().optional(),
-  REFRESH_TOKEN_TTL: Joi.number().optional(),
+  REFRESH_TOKEN_TTL_SECONDS: Joi.number()
+    .optional()
+    .default(5 * 60),
   TOKEN_EVENTS_ENABLED: Joi.bool().optional(),
   TOKEN_VALIDATION_ENABLED: Joi.bool().optional(),
 });
