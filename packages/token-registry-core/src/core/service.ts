@@ -261,7 +261,8 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     const promises = this.eventHandlers.map((handler) => {
       const handlerFn = handler[event];
       if (typeof handlerFn === "function") {
-        return handlerFn(token, data).catch((error) => {
+        // ✅ Вызываем метод НА объекте handler с правильным контекстом
+        return handlerFn.call(handler, token, data).catch((error) => {
           console.error(`Error in event handler during '${event}':`, error);
         });
       }

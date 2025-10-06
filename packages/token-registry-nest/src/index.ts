@@ -7,7 +7,6 @@ export { TokenRegistryModule } from "./token-registry.module";
 export type {
   TokenRegistryModuleOptions,
   TokenRegistryModuleAsyncOptions,
-  TokenRegistryServiceOptions,
 } from "./interfaces";
 
 // ===================== DECORATORS =====================

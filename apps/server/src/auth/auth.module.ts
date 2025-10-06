@@ -11,7 +11,7 @@ import { ConfigService } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
 import { TokenRegistryModule } from "@kavabanga/token-registry-nest";
 import { createIoredisStore, Redis } from "@kavabanga/token-registry-ioredis";
-
+import { RefreshTokenEventHandlers } from "./refresh-token.handlers";
 @Module({
   imports: [
     UsersModule,
@@ -49,6 +49,7 @@ import { createIoredisStore, Redis } from "@kavabanga/token-registry-ioredis";
             true
           ),
         },
+        eventHandlers: [new RefreshTokenEventHandlers()],
       }),
       inject: [ConfigService],
     }),

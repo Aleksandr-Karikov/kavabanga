@@ -2,6 +2,7 @@ import {
   TokenRegistryConfig,
   ITokenMeta,
   ITokenStore,
+  TokenEventHandler,
 } from "@kavabanga/token-registry-core";
 
 export interface TokenRegistryModuleOptions {
@@ -19,6 +20,11 @@ export interface TokenRegistryModuleOptions {
    * Global module flag
    */
   global?: boolean;
+
+  /**
+   * event handlers
+   */
+  eventHandlers?: TokenEventHandler[];
 }
 
 export interface TokenRegistryModuleAsyncOptions {
@@ -38,18 +44,4 @@ export interface TokenRegistryModuleAsyncOptions {
    * Dependencies to inject
    */
   inject?: any[];
-}
-
-export interface TokenRegistryServiceOptions<
-  T extends ITokenMeta = ITokenMeta,
-> {
-  /**
-   * Token registry configuration
-   */
-  config: TokenRegistryConfig;
-
-  /**
-   * Token meta type
-   */
-  tokenMetaType?: new () => T;
 }

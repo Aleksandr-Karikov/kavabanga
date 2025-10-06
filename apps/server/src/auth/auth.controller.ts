@@ -21,6 +21,7 @@ import {
 } from "@nestjs/swagger";
 import { RefreshUser } from "./auth.types";
 import { ConfigService } from "@nestjs/config";
+import { CookieSerializeOptions } from "@fastify/cookie";
 
 @Controller("auth")
 export class AuthController {
@@ -37,18 +38,36 @@ export class AuthController {
     );
   }
 
+  private getCookieOptions(maxAge?: number): CookieSerializeOptions {
+    const options: CookieSerializeOptions = {
+      httpOnly: true,
+      sameSite: "strict",
+      path: "/",
+    };
+
+    if (maxAge) {
+      options.maxAge = maxAge;
+    }
+
+    return options;
+  }
+
   private async setRefreshTokenToCookie(
     res: FastifyReply,
     refreshToken: string
   ) {
     this.logger.debug(
-      `Set refresh cookie with maxAta: ${this.REFRESH_TOKEN_TTL_SECONDS}`
+      `Set refresh cookie with maxAge: ${this.REFRESH_TOKEN_TTL_SECONDS}`
     );
-    res.setCookie(this.REFRESH_COOKIE_NAME, refreshToken, {
-      maxAge: this.REFRESH_TOKEN_TTL_SECONDS,
-      httpOnly: true,
-      sameSite: "strict",
-    });
+    res.setCookie(
+      this.REFRESH_COOKIE_NAME,
+      refreshToken,
+      this.getCookieOptions(this.REFRESH_TOKEN_TTL_SECONDS)
+    );
+  }
+
+  private clearRefreshTokenCookie(res: FastifyReply) {
+    res.clearCookie(this.REFRESH_COOKIE_NAME, this.getCookieOptions());
   }
 
   @UseGuards(LocalAuthGuard)
@@ -151,7 +170,7 @@ export class AuthController {
     } catch (e) {
       this.logger.error(`Logout failed: ${e.message}`, e.stack);
     } finally {
-      res.clearCookie(this.REFRESH_COOKIE_NAME);
+      this.clearRefreshTokenCookie(res);
       res.send({ ok: true });
     }
   }

@@ -466,4 +466,3 @@ export class AppModule {}
 
 - `TokenRegistryModuleOptions` - опции модуля
 - `TokenRegistryModuleAsyncOptions` - асинхронные опции модуля
-- `TokenRegistryServiceOptions` - опции сервиса

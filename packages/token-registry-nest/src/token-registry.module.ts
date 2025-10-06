@@ -54,6 +54,7 @@ export class TokenRegistryModule {
         useValue: {
           config: finalConfig,
           storeFactory: options.storeFactory,
+          eventHandlers: options.eventHandlers || [],
         },
       },
       {
@@ -74,7 +75,7 @@ export class TokenRegistryModule {
             store,
             finalConfig,
             validator,
-            []
+            moduleOptions.eventHandlers ?? []
           );
         },
         inject: [TOKEN_REGISTRY_MODULE_OPTIONS],
@@ -94,7 +95,6 @@ export class TokenRegistryModule {
       {
         provide: TOKEN_REGISTRY_SERVICE,
         useFactory: async (moduleOptions: TokenRegistryModuleOptions) => {
-          console.log("moduleOptions", moduleOptions);
           const finalConfig: TokenRegistryConfig = {
             ...DEFAULT_CONFIG,
             ...(moduleOptions.config || {}),
@@ -110,7 +110,7 @@ export class TokenRegistryModule {
             store,
             finalConfig,
             validator,
-            []
+            moduleOptions.eventHandlers ?? []
           );
         },
         inject: [TOKEN_REGISTRY_MODULE_OPTIONS],
