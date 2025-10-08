@@ -77,6 +77,7 @@ export class AuthService {
     user: User,
     deviceId?: string
   ): Promise<{ accessToken: string; refreshToken: string }> {
+    // Упрощенная обработка ошибок для revokeToken
     try {
       await this.tokenRegistry.revokeToken(oldToken);
       this.logger.debug(`Token revoked successfully for user: ${user.uuid}`);
@@ -109,10 +110,13 @@ export class AuthService {
       await this.tokenRegistry.revokeToken(refreshToken);
       this.logger.debug("User logged out successfully");
     } catch (error) {
-      this.logger.error("Failed to revoke token during logout", {
-        error: error.message,
-        tokenPrefix: refreshToken.substring(0, 10) + "...",
-      });
+      this.logger.warn(
+        "Failed to revoke token during logout (Redis may be down)",
+        {
+          error: error.message,
+          tokenPrefix: refreshToken.substring(0, 10) + "...",
+        }
+      );
     }
   }
 
@@ -127,28 +131,35 @@ export class AuthService {
       const refreshToken = crypto.randomBytes(32).toString("hex");
       const resolvedDeviceId = deviceId ?? v7();
 
-      await this.tokenRegistry.saveToken(refreshToken, {
-        sub: user.uuid,
-        meta: {
-          deviceId: resolvedDeviceId,
-        },
-        issuedAt: Date.now(),
-      });
+      try {
+        await this.tokenRegistry.saveToken(refreshToken, {
+          sub: user.uuid,
+          meta: {
+            deviceId: resolvedDeviceId,
+          },
+          issuedAt: Date.now(),
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Failed to save token to Redis for user: ${user.uuid}`,
+          {
+            error: error.message,
+          }
+        );
+      }
 
-      this.logger.debug(`User logged in successfully: ${user.uuid}`, {
-        deviceId: resolvedDeviceId,
-      });
-
-      return {
-        accessToken,
-        refreshToken,
-      };
+      this.logger.log(`User logged in successfully: ${user.uuid}`);
+      return { accessToken, refreshToken };
     } catch (error) {
-      this.logger.error(`Failed to login user: ${user.uuid}`, {
-        error: error.message,
+      this.logger.error(`Login failed for user: ${user.uuid}`, {
+        error: error instanceof Error ? error.message : String(error),
         deviceId,
+        userId: user.uuid,
       });
-      throw new InternalServerErrorException("Failed to create session");
+
+      throw new InternalServerErrorException(
+        "Authentication service temporarily unavailable"
+      );
     }
   }
 }
