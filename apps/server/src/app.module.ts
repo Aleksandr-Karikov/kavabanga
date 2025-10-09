@@ -8,6 +8,7 @@ import { AuthModule } from "./auth/auth.module";
 import { UsersModule } from "./users/users.module";
 import { MetricsModule } from "./metrics/metrics.module";
 import { RedisModule } from "@nestjs-modules/ioredis";
+import { RolesModule } from "src/roles/roles.module";
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { RedisModule } from "@nestjs-modules/ioredis";
     }),
     MetricsModule,
     AuthModule,
+    RolesModule,
     UsersModule,
   ],
   controllers: [],

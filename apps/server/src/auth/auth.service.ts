@@ -14,6 +14,7 @@ import {
   InjectTokenRegistry,
   TokenRegistryService,
 } from "@kavabanga/token-registry-nest";
+import { AccessTokenPayload } from "src/auth/auth.types";
 
 @Injectable()
 export class AuthService {
@@ -29,12 +30,17 @@ export class AuthService {
   async validateUserPassword(
     username: string,
     pass: string
-  ): Promise<Omit<User, "password">> {
+  ): Promise<User | null> {
     try {
       const user = await this.usersService.findByUsername(username);
 
       if (!user) {
         this.logger.debug(`User not found: ${username}`);
+        return null;
+      }
+
+      if (!user.isActive) {
+        this.logger.debug(`User is inactive: ${username}`);
         return null;
       }
 
@@ -44,9 +50,7 @@ export class AuthService {
         return null;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { password, ...result } = user;
-      return result;
+      return user;
     } catch (error) {
       this.logger.error(`Failed to validate user password for: ${username}`, {
         error: error.message,
@@ -77,7 +81,6 @@ export class AuthService {
     user: User,
     deviceId?: string
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    // Упрощенная обработка ошибок для revokeToken
     try {
       await this.tokenRegistry.revokeToken(oldToken);
       this.logger.debug(`Token revoked successfully for user: ${user.uuid}`);
@@ -125,9 +128,14 @@ export class AuthService {
     deviceId?: string
   ): Promise<{ accessToken: string; refreshToken: string }> {
     try {
-      const payload = { username: user.username, sub: user.uuid };
-      const accessToken = this.jwtService.sign(payload);
+      const payload: AccessTokenPayload = {
+        username: user.username,
+        sub: user.uuid,
+        roles: user.roles?.map((role) => role.name) ?? [],
+        permissions: this.getUserPermissions(user),
+      };
 
+      const accessToken = this.jwtService.sign(payload);
       const refreshToken = crypto.randomBytes(32).toString("hex");
       const resolvedDeviceId = deviceId ?? v7();
 
@@ -136,6 +144,7 @@ export class AuthService {
           sub: user.uuid,
           meta: {
             deviceId: resolvedDeviceId,
+            roles: payload.roles,
           },
           issuedAt: Date.now(),
         });
@@ -161,5 +170,25 @@ export class AuthService {
         "Authentication service temporarily unavailable"
       );
     }
+  }
+
+  private getUserPermissions(user: User): string[] {
+    const permissions = new Set<string>();
+
+    if (!user.roles || !user.roles.isInitialized()) {
+      return [];
+    }
+
+    const roleItems = user.roles.getItems();
+
+    for (const role of roleItems) {
+      if (role.permissions && Array.isArray(role.permissions)) {
+        for (const permission of role.permissions) {
+          permissions.add(permission);
+        }
+      }
+    }
+
+    return Array.from(permissions);
   }
 }

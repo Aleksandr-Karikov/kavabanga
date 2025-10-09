@@ -1,4 +1,3 @@
-// redis-error-classifier.service.ts
 import { Injectable } from "@nestjs/common";
 import { IErrorClassifier } from "../shared/circuit-breaker/error-classifier.interface";
 
@@ -9,40 +8,27 @@ interface ErrorWithCode extends Error {
   isTimeout?: boolean;
 }
 
-/**
- * Классификатор ошибок для Redis операций (TokenStore)
- * ВСЕ ошибки Redis считаются критичными для открытия Circuit Breaker
- * но некритичными для проброса в бизнес-логику
- */
 @Injectable()
 export class RedisErrorClassifier implements IErrorClassifier {
   isCriticalError(error: unknown): boolean {
     const normalizedError = this.normalizeError(error);
 
-    // Для Redis операций ВСЕ инфраструктурные ошибки критичны для Circuit Breaker
-    // но некритичны для проброса в бизнес-логику
-
-    // Redis ошибки = КРИТИЧНЫ для Circuit Breaker (чтобы он открывался)
     if (this.isRedisError(normalizedError)) {
       return true;
     }
 
-    // Таймауты = КРИТИЧНЫ для Circuit Breaker
     if (this.isTimeoutError(normalizedError)) {
       return true;
     }
 
-    // Сетевые ошибки = КРИТИЧНЫ для Circuit Breaker
     if (this.isNetworkError(normalizedError)) {
       return true;
     }
 
-    // Ошибки бизнес-логики НЕ критичны (не должны влиять на Circuit Breaker)
     if (this.isBusinessLogicError(normalizedError)) {
       return false;
     }
 
-    // По умолчанию считаем критичными
     return true;
   }
 

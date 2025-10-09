@@ -1,8 +1,10 @@
 import { User } from "src/users/user.entity";
 
-export type TokenPayload = {
+export type AccessTokenPayload = {
   username: string;
   sub: string;
+  roles: string[];
+  permissions: string[];
 };
 
 export type RefreshUser = {
