@@ -71,7 +71,6 @@ export class RolesService {
   async deleteRole(id: string): Promise<void> {
     const role = await this.findById(id);
 
-    // Защита от удаления системных ролей
     if (Object.values(RoleName).includes(role.name as RoleName)) {
       throw new ConflictException("Cannot delete system role");
     }

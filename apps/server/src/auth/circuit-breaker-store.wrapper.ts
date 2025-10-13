@@ -85,7 +85,6 @@ export class CircuitBreakerStoreWrapper implements ITokenStore {
         },
       }
     );
-    // УБРАТЬ внешний try/catch
   }
 
   async health(): Promise<boolean> {

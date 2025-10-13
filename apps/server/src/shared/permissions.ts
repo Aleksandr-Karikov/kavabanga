@@ -202,9 +202,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
   ],
 };
 
-/**
- * Описания разрешений для UI
- */
 export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   // Users
   [Permission.USER_CREATE]: "Create new users",
@@ -272,9 +269,6 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   [Permission.API_RATE_LIMIT_BYPASS]: "Bypass API rate limits",
 };
 
-/**
- * Группировка разрешений для UI
- */
 export const PERMISSION_GROUPS = {
   user: {
     label: "User Management",
