@@ -11,6 +11,7 @@ import {
   TokenRegistryError,
   DEFAULT_CONFIG,
   TokenOperation,
+  TokenValidationError,
 } from "./interfaces";
 
 /**
@@ -158,6 +159,117 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
         }
       },
       { token }
+    );
+  }
+
+  /**
+   * Removes the old token from storage and stores a new one in one atomic operation.
+   */
+
+  async rotateToken(
+    oldToken: string,
+    newToken: string,
+    newTokenData: Omit<TokenData<T>, "expiresAt" | "issuedAt"> & {
+      issuedAt?: TokenData["issuedAt"];
+      expiresAt?: TokenData["expiresAt"];
+    },
+    ttl?: number
+  ): Promise<void> {
+    if (this.isShuttingDown) {
+      throw new TokenOperationError(
+        "rotate",
+        new Error("Service is shutting down")
+      );
+    }
+
+    return this.executeOperation(
+      "rotate",
+      async () => {
+        if (
+          !oldToken ||
+          typeof oldToken !== "string" ||
+          oldToken.trim().length === 0
+        ) {
+          throw new TokenValidationError(
+            "Old token must be a non-empty string",
+            { operation: "rotate" }
+          );
+        }
+
+        if (
+          !newToken ||
+          typeof newToken !== "string" ||
+          newToken.trim().length === 0
+        ) {
+          throw new TokenValidationError(
+            "New token must be a non-empty string",
+            { operation: "rotate" }
+          );
+        }
+
+        if (oldToken === newToken) {
+          throw new TokenValidationError(
+            "New token must be different from old token",
+            { operation: "rotate" }
+          );
+        }
+
+        const oldData = await this.store.get(oldToken);
+
+        if (!oldData) {
+          throw new TokenNotFoundError(oldToken);
+        }
+
+        if (oldData.expiresAt < Date.now()) {
+          throw new TokenValidationError("Cannot rotate expired token", {
+            oldToken: oldToken.substring(0, 10) + "...",
+            expiredAt: new Date(oldData.expiresAt).toISOString(),
+          });
+        }
+
+        const effectiveTtl = ttl ?? this.config.defaultTtl;
+        const now = Date.now();
+
+        const completeTokenData: TokenData<T> = {
+          ...newTokenData,
+          expiresAt: newTokenData.expiresAt ?? now + effectiveTtl * 1000,
+          issuedAt: newTokenData.issuedAt ?? now,
+        };
+
+        if (this.config.enableValidation) {
+          await this.validator.validate(
+            newToken,
+            completeTokenData,
+            effectiveTtl
+          );
+        }
+
+        await this.store.rotate(
+          oldToken,
+          newToken,
+          completeTokenData,
+          effectiveTtl
+        );
+
+        if (this.config.enableEvents) {
+          await Promise.allSettled([
+            this.notifyEventHandlers(
+              "onTokenRevoked",
+              oldToken,
+              oldData as TokenData<T>
+            ),
+            this.notifyEventHandlers(
+              "onTokenCreated",
+              newToken,
+              completeTokenData as TokenData<T>
+            ),
+          ]);
+        }
+      },
+      {
+        oldToken: oldToken.substring(0, 10) + "...",
+        newToken: newToken.substring(0, 10) + "...",
+      }
     );
   }
 

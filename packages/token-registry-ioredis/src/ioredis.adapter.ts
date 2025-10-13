@@ -16,6 +16,15 @@ export class IoredisStore implements ITokenStore {
     this.keyPrefix = options.keyPrefix || "token";
   }
 
+  rotate(
+    oldToken: string,
+    newToken: string,
+    newTokenData: TokenData,
+    ttl: number
+  ): Promise<void> {
+    throw new Error("Method not implemented.");
+  }
+
   async save(token: string, data: TokenData, ttl: number): Promise<void> {
     const key = this.getTokenKey(token);
     await this.redis.setex(key, ttl, JSON.stringify(data));

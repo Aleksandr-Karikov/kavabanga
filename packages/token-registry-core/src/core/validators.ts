@@ -6,8 +6,6 @@ import {
   TokenRegistryConfig,
 } from "./interfaces";
 
-// ===================== SIMPLIFIED VALIDATOR =====================
-
 export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
   implements ITokenValidator<T>
 {
@@ -276,8 +274,6 @@ export class DefaultTokenValidator<T extends ITokenMeta = ITokenMeta>
   }
 }
 
-// ===================== NO-OP VALIDATOR =====================
-
 export class NoOpValidator<T extends ITokenMeta = ITokenMeta>
   implements ITokenValidator<T>
 {
@@ -285,7 +281,5 @@ export class NoOpValidator<T extends ITokenMeta = ITokenMeta>
     _token: string,
     _data: TokenData<T>,
     _ttl: number
-  ): Promise<void> {
-    // No validation
-  }
+  ): Promise<void> {}
 }

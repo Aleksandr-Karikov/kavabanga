@@ -35,6 +35,16 @@ export interface ITokenStore {
   delete(token: string): Promise<void>;
 
   /**
+   * Deletes old token from store and save new token in store
+   */
+  rotate(
+    oldToken: string,
+    newToken: string,
+    newTokenData: TokenData,
+    ttl: number
+  ): Promise<void>;
+
+  /**
    * Checks store health
    */
   health(): Promise<boolean>;
@@ -172,7 +182,7 @@ export class TokenTimeoutError extends TokenRegistryError {
 
 // ===================== UTILITY TYPES =====================
 
-export type TokenOperation = "save" | "get" | "delete" | "health";
+export type TokenOperation = "save" | "get" | "delete" | "health" | "rotate";
 
 // Forward class declaration for circular dependencies
 export declare class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
