@@ -23,6 +23,14 @@ export {
 
 // ===================== RE-EXPORTS FROM CORE =====================
 
+export {
+  TokenRegistryError,
+  TokenValidationError,
+  TokenNotFoundError,
+  TokenOperationError,
+  TokenTimeoutError,
+} from "@kavabanga/token-registry-core";
+
 export type {
   ITokenStore,
   ITokenValidator,
@@ -30,11 +38,6 @@ export type {
   TokenData,
   TokenRegistryConfig,
   ITokenMeta,
-  TokenRegistryError,
-  TokenValidationError,
-  TokenNotFoundError,
-  TokenOperationError,
-  TokenTimeoutError,
 } from "@kavabanga/token-registry-core";
 
 export {

@@ -82,18 +82,22 @@ export class AuthService {
     deviceId?: string
   ): Promise<{ accessToken: string; refreshToken: string }> {
     try {
-      await this.tokenRegistry.revokeToken(oldToken);
-      this.logger.debug(`Token revoked successfully for user: ${user.uuid}`);
-    } catch (error) {
-      this.logger.warn(`Failed to revoke old token for user: ${user.uuid}`, {
-        error: error.message,
-      });
-    }
+      const refreshToken = this.generateRefreshToken();
 
-    try {
-      const result = await this.login(user, deviceId);
+      await this.tokenRegistry.rotateToken(
+        oldToken,
+        refreshToken,
+        this.buildRefreshTokenPayload(
+          user,
+          user.roles?.map((role) => role.name) ?? [],
+          deviceId
+        )
+      );
+
+      const accessToken = this.generateAccessToken(user);
       this.logger.debug(`Token refreshed successfully for user: ${user.uuid}`);
-      return result;
+
+      return { refreshToken, accessToken };
     } catch (error) {
       this.logger.error(`Failed to refresh token for user: ${user.uuid}`, {
         error: error.message,
@@ -123,31 +127,54 @@ export class AuthService {
     }
   }
 
+  private generateRefreshToken() {
+    return crypto.randomBytes(32).toString("hex");
+  }
+
+  private buildRefreshTokenPayload(
+    user: User,
+    roles: string[],
+    deviceId?: string
+  ) {
+    const resolvedDeviceId = deviceId ?? v7();
+    return {
+      sub: user.uuid,
+      meta: {
+        deviceId: resolvedDeviceId,
+        roles: roles,
+      },
+      issuedAt: Date.now(),
+    };
+  }
+
+  private generateAccessToken(user: User) {
+    const payload: AccessTokenPayload = {
+      username: user.username,
+      sub: user.uuid,
+      roles: user.roles?.map((role) => role.name) ?? [],
+      permissions: this.getUserPermissions(user),
+    };
+
+    return this.jwtService.sign(payload);
+  }
+
   async login(
     user: User,
     deviceId?: string
   ): Promise<{ accessToken: string; refreshToken: string }> {
     try {
-      const payload: AccessTokenPayload = {
-        username: user.username,
-        sub: user.uuid,
-        roles: user.roles?.map((role) => role.name) ?? [],
-        permissions: this.getUserPermissions(user),
-      };
-
-      const accessToken = this.jwtService.sign(payload);
-      const refreshToken = crypto.randomBytes(32).toString("hex");
-      const resolvedDeviceId = deviceId ?? v7();
+      const accessToken = this.generateAccessToken(user);
+      const refreshToken = this.generateRefreshToken();
 
       try {
-        await this.tokenRegistry.saveToken(refreshToken, {
-          sub: user.uuid,
-          meta: {
-            deviceId: resolvedDeviceId,
-            roles: payload.roles,
-          },
-          issuedAt: Date.now(),
-        });
+        await this.tokenRegistry.saveToken(
+          refreshToken,
+          this.buildRefreshTokenPayload(
+            user,
+            user.roles.map((r) => r.name) ?? [],
+            deviceId
+          )
+        );
       } catch (error) {
         this.logger.warn(
           `Failed to save token to Redis for user: ${user.uuid}`,

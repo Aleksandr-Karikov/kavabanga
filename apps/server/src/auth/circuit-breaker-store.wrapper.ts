@@ -9,9 +9,38 @@ export class CircuitBreakerStoreWrapper implements ITokenStore {
     private readonly underlyingStore: ITokenStore,
     private readonly circuitBreakerManager: CircuitBreakerManager
   ) {}
+  rotate(
+    oldToken: string,
+    newToken: string,
+    newTokenData: TokenData,
+    ttl: number
+  ): Promise<void> {
+    return this.circuitBreakerManager.fire(
+      "token-rotate-operation",
+      async (o: string, n: string, d: TokenData, ttl: number) => {
+        return await this.underlyingStore.rotate(o, n, d, ttl);
+      },
+      [oldToken, newToken, newTokenData, ttl],
+      {
+        timeout: 3000,
+        errorThresholdPercentage: 50,
+        resetTimeout: 30000,
+        volumeThreshold: 3,
+        fallbackFn: (error, t: string, d: TokenData) => {
+          const errorMessage = error.message || String(error);
+
+          this.logger.warn(
+            `Token rotate fallback: ${errorMessage}. User: ${d.sub}. Token will not be persisted.`
+          );
+
+          return Promise.resolve(undefined);
+        },
+      }
+    );
+  }
 
   async save(token: string, data: TokenData, ttl: number): Promise<void> {
-    return await this.circuitBreakerManager.fire(
+    return this.circuitBreakerManager.fire(
       "token-store-save",
       async (t: string, d: TokenData, timeToLive: number) => {
         return await this.underlyingStore.save(t, d, timeToLive);
@@ -36,7 +65,7 @@ export class CircuitBreakerStoreWrapper implements ITokenStore {
   }
 
   async get(token: string): Promise<TokenData | null> {
-    return await this.circuitBreakerManager.fire(
+    return this.circuitBreakerManager.fire(
       "token-store-get",
       async (t: string) => {
         return await this.underlyingStore.get(t);
@@ -88,7 +117,7 @@ export class CircuitBreakerStoreWrapper implements ITokenStore {
   }
 
   async health(): Promise<boolean> {
-    return await this.circuitBreakerManager.fire(
+    return this.circuitBreakerManager.fire(
       "token-store-health",
       async () => {
         return await this.underlyingStore.health();
