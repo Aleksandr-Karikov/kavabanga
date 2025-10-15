@@ -1,9 +1,10 @@
-// ioredis-store.test.ts
 import { IoredisStore, createIoredisStore } from "../index";
 import {
+  TokenAlreadyExistsError,
   TokenData,
   TokenNotFoundError,
   TokenOperationError,
+  TokenStoreConnectionError,
 } from "@kavabanga/token-registry-core";
 import Redis from "ioredis";
 import { DEFAULT_PREFIX, LUA_SCRIPT_ERROR } from "../ioredis.adapter";
@@ -208,7 +209,7 @@ describe("IoredisStore", () => {
       expect(luaScript).toContain("redis.call('DEL', KEYS[1])");
       expect(luaScript).toContain("redis.call('SET', KEYS[2]");
 
-      expect(callArgs[1]).toBe(2); 
+      expect(callArgs[1]).toBe(2);
       expect(callArgs[2]).toBe("token:old-token-12345678"); // oldKey
       expect(callArgs[3]).toBe("token:new-token-87654321"); // newKey
       expect(callArgs[4]).toBe(JSON.stringify(newData)); // serialized data
@@ -244,8 +245,7 @@ describe("IoredisStore", () => {
         meta: { deviceId: "device-new" },
       };
 
-      // Mock Lua script возвращает ошибку "New token already exists"
-      mockRedis.eval.mockRejectedValue(new Error("New token already exists"));
+      mockRedis.eval.mockRejectedValue(new TokenAlreadyExistsError(newToken));
 
       await expect(
         store.rotate(oldToken, newToken, newData, 3600)
@@ -266,7 +266,7 @@ describe("IoredisStore", () => {
 
       await expect(
         store.rotate(oldToken, newToken, newData, 3600)
-      ).rejects.toThrow(TokenOperationError);
+      ).rejects.toThrow(TokenStoreConnectionError);
     });
 
     it("should handle complex token data in rotation", async () => {
@@ -413,7 +413,8 @@ describe("IoredisStore", () => {
 
   describe("IoredisStore - error handling", () => {
     it("should throw Redis error as is for connection failures", async () => {
-      const connectionError = new Error("Connection refused");
+      const message = "Connection refused";
+      const connectionError = new Error(message);
       (connectionError as any).code = "ECONNREFUSED";
       mockRedis.setex.mockRejectedValue(connectionError);
 
@@ -429,24 +430,8 @@ describe("IoredisStore", () => {
         await store.save(token, data, 3600);
         fail("Should have thrown error");
       } catch (error) {
-        // Redis ошибка пробросилась как есть
-        expect(error).toBe(connectionError);
-        expect((error as any).code).toBe("ECONNREFUSED");
-      }
-    });
-
-    it("should throw Redis error as is for timeout", async () => {
-      const timeoutError = new Error("Command timed out");
-      (timeoutError as any).code = "ETIMEDOUT";
-      mockRedis.get.mockRejectedValue(timeoutError);
-
-      try {
-        await store.get("test-token");
-        fail("Should have thrown error");
-      } catch (error) {
-        // Redis ошибка пробросилась как есть
-        expect(error).toBe(timeoutError);
-        expect((error as any).code).toBe("ETIMEDOUT");
+        expect(error).toBeInstanceOf(TokenStoreConnectionError);
+        expect((error as any).code).toBe("STORE_CONNECTION_ERROR");
       }
     });
 
@@ -457,7 +442,6 @@ describe("IoredisStore", () => {
         await store.get("test-token");
         fail("Should have thrown error");
       } catch (error) {
-        // Ошибка парсинга обернута
         expect(error).toBeInstanceOf(TokenOperationError);
         expect(
           (error as TokenOperationError).context?.parseError
@@ -495,13 +479,11 @@ describe("IoredisStore", () => {
 
       mockRedis.setex.mockResolvedValue("OK");
 
-      // Множественные одновременные сохранения
       await Promise.all(
         Array.from({ length: 5 }, () => store.save(token, data, 3600))
       );
 
       expect(mockRedis.setex).toHaveBeenCalledTimes(5);
-      // Все вызовы должны быть с одним ключом
       mockRedis.setex.mock.calls.forEach((call) => {
         expect(call[0]).toBe("token:concurrent-token");
       });

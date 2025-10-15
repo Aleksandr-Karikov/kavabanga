@@ -3,20 +3,22 @@ import {
   TokenData,
   TokenNotFoundError,
   TokenOperationError,
+  TokenAlreadyExistsError,
+  TokenStoreConnectionError,
 } from "@kavabanga/token-registry-core";
 import { Redis, Cluster } from "ioredis";
 
 export interface IoredisStoreOptions {
-  /** Custom prefix for token keys. Default: 'token' */
   keyPrefix?: string;
 }
 
 export const LUA_SCRIPT_ERROR = {
   OLD_TOKEN_NOT_FOUND: "OLD_TOKEN_NOT_FOUND",
   TOKEN_ALREADY_EXIST: "TOKEN_ALREADY_EXIST",
-};
+} as const;
 
 export const DEFAULT_PREFIX = "token";
+
 export class IoredisStore implements ITokenStore {
   private readonly keyPrefix: string;
 
@@ -47,7 +49,6 @@ export class IoredisStore implements ITokenStore {
       end
       
       redis.call('DEL', KEYS[1])
-      
       redis.call('SET', KEYS[2], ARGV[1], 'EX', ARGV[2])
       
       return 'OK'
@@ -63,7 +64,6 @@ export class IoredisStore implements ITokenStore {
         ttl.toString()
       );
 
-      console.log(result);
       if (result !== "OK") {
         throw new Error(`Unexpected result from Lua script: ${result}`);
       }
@@ -75,14 +75,18 @@ export class IoredisStore implements ITokenStore {
       }
 
       if (errorMessage === LUA_SCRIPT_ERROR.TOKEN_ALREADY_EXIST) {
-        throw new TokenOperationError(
-          "rotate",
-          new Error("New token already exists in store"),
-          {
-            oldToken: oldToken.substring(0, 10) + "...",
-            newToken: newToken.substring(0, 10) + "...",
-          }
-        );
+        throw new TokenAlreadyExistsError(newToken, {
+          operation: "rotate",
+          oldToken: oldToken.substring(0, 10) + "...",
+        });
+      }
+
+      if (this.isConnectionError(error as Error)) {
+        throw new TokenStoreConnectionError((error as Error).message, {
+          operation: "rotate",
+          oldToken: oldToken.substring(0, 10) + "...",
+          newToken: newToken.substring(0, 10) + "...",
+        });
       }
 
       throw new TokenOperationError("rotate", error as Error, {
@@ -93,32 +97,75 @@ export class IoredisStore implements ITokenStore {
   }
 
   async save(token: string, data: TokenData, ttl: number): Promise<void> {
-    const key = this.getTokenKey(token);
-    await this.redis.setex(key, ttl, JSON.stringify(data));
+    try {
+      const key = this.getTokenKey(token);
+      await this.redis.setex(key, ttl, JSON.stringify(data));
+    } catch (error) {
+      if (this.isConnectionError(error as Error)) {
+        throw new TokenStoreConnectionError((error as Error).message, {
+          operation: "save",
+        });
+      }
+
+      throw new TokenOperationError("save", error as Error, {
+        token: token.substring(0, 10) + "...",
+      });
+    }
   }
 
   async get(token: string): Promise<TokenData | null> {
-    const key = this.getTokenKey(token);
-    const data = await this.redis.get(key);
-
-    if (!data) {
-      return null;
-    }
-
     try {
-      return JSON.parse(data);
-    } catch (parseError) {
-      throw new TokenOperationError(
-        "get",
-        new Error("Failed to parse token data from Redis"),
-        { parseError: (parseError as Error).message }
-      );
+      const key = this.getTokenKey(token);
+      const data = await this.redis.get(key);
+
+      if (!data) {
+        return null;
+      }
+
+      try {
+        return JSON.parse(data);
+      } catch (parseError) {
+        throw new TokenOperationError(
+          "get",
+          new Error("Failed to parse token data from Redis"),
+          {
+            parseError: (parseError as Error).message,
+            token: token.substring(0, 10) + "...",
+          }
+        );
+      }
+    } catch (error) {
+      if (error instanceof TokenOperationError) {
+        throw error;
+      }
+
+      if (this.isConnectionError(error as Error)) {
+        throw new TokenStoreConnectionError((error as Error).message, {
+          operation: "get",
+        });
+      }
+
+      throw new TokenOperationError("get", error as Error, {
+        token: token.substring(0, 10) + "...",
+      });
     }
   }
 
   async delete(token: string): Promise<void> {
-    const key = this.getTokenKey(token);
-    await this.redis.del(key);
+    try {
+      const key = this.getTokenKey(token);
+      await this.redis.del(key);
+    } catch (error) {
+      if (this.isConnectionError(error as Error)) {
+        throw new TokenStoreConnectionError((error as Error).message, {
+          operation: "delete",
+        });
+      }
+
+      throw new TokenOperationError("delete", error as Error, {
+        token: token.substring(0, 10) + "...",
+      });
+    }
   }
 
   async health(): Promise<boolean> {
@@ -129,7 +176,32 @@ export class IoredisStore implements ITokenStore {
       return false;
     }
   }
+
   private getTokenKey(token: string): string {
     return `${this.keyPrefix}:${token}`;
+  }
+
+  private isConnectionError(error: Error): boolean {
+    const connectionCodes = [
+      "ECONNREFUSED",
+      "ENOTFOUND",
+      "ECONNRESET",
+      "ENETUNREACH",
+      "EHOSTUNREACH",
+      "ETIMEDOUT",
+    ];
+
+    const errorWithCode = error as Error & { code?: string };
+
+    if (errorWithCode.code && connectionCodes.includes(errorWithCode.code)) {
+      return true;
+    }
+
+    const msg = error.message.toLowerCase();
+    return (
+      msg.includes("connection") ||
+      msg.includes("connect") ||
+      msg.includes("timeout")
+    );
   }
 }

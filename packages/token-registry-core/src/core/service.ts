@@ -7,6 +7,7 @@ import {
   TokenOperationError,
   TokenNotFoundError,
   TokenTimeoutError,
+  TokenExpiredError,
   ITokenMeta,
   TokenRegistryError,
   DEFAULT_CONFIG,
@@ -14,10 +15,6 @@ import {
   TokenValidationError,
 } from "./interfaces";
 
-/**
- * Simplified token registry service
- * Focuses on core functionality: save, get, delete tokens
- */
 export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   private eventHandlers: TokenEventHandler<T>[] = [];
   private isShuttingDown = false;
@@ -28,16 +25,10 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     private readonly validator: ITokenValidator<T>
   ) {}
 
-  /**
-   * Registers event handler
-   */
   registerEventHandler(handler: TokenEventHandler<T>): void {
     this.eventHandlers.push(handler);
   }
 
-  /**
-   * Unregisters event handler
-   */
   unregisterEventHandler(handler: TokenEventHandler<T>): void {
     const index = this.eventHandlers.indexOf(handler);
     if (index !== -1) {
@@ -45,9 +36,6 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     }
   }
 
-  /**
-   * Saves token with specified data
-   */
   async saveToken(
     token: string,
     data: Omit<TokenData<T>, "expiresAt" | "issuedAt"> & {
@@ -75,15 +63,12 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     return this.executeOperation(
       "save",
       async () => {
-        // Validate input
         if (this.config.enableValidation) {
           await this.validator.validate(token, completeTokenData, effectiveTtl);
         }
 
-        // Save to store
         await this.store.save(token, completeTokenData, effectiveTtl);
 
-        // Notify event handlers
         if (this.config.enableEvents) {
           await this.notifyEventHandlers(
             "onTokenCreated",
@@ -96,9 +81,6 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     );
   }
 
-  /**
-   * Gets token data
-   */
   async getTokenData(token: string): Promise<TokenData<T> | null> {
     if (this.isShuttingDown) {
       throw new TokenOperationError(
@@ -126,9 +108,6 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     );
   }
 
-  /**
-   * Revokes (deletes) token
-   */
   async revokeToken(token: string): Promise<void> {
     if (this.isShuttingDown) {
       throw new TokenOperationError(
@@ -140,16 +119,13 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     return this.executeOperation(
       "delete",
       async () => {
-        // Get token data for event handlers
         const data = await this.store.get(token);
         if (!data) {
           throw new TokenNotFoundError(token);
         }
 
-        // Delete from store
         await this.store.delete(token);
 
-        // Notify event handlers
         if (this.config.enableEvents) {
           await this.notifyEventHandlers(
             "onTokenRevoked",
@@ -161,10 +137,6 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
       { token }
     );
   }
-
-  /**
-   * Removes the old token from storage and stores a new one in one atomic operation.
-   */
 
   async rotateToken(
     oldToken: string,
@@ -221,10 +193,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
         }
 
         if (oldData.expiresAt < Date.now()) {
-          throw new TokenValidationError("Cannot rotate expired token", {
-            oldToken: oldToken.substring(0, 10) + "...",
-            expiredAt: new Date(oldData.expiresAt).toISOString(),
-          });
+          throw new TokenExpiredError(oldToken, oldData.expiresAt);
         }
 
         const effectiveTtl = ttl ?? this.config.defaultTtl;
@@ -273,9 +242,6 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     );
   }
 
-  /**
-   * Checks service health status
-   */
   async getHealthStatus(): Promise<boolean> {
     try {
       return await this.executeOperation("health", () => this.store.health());
@@ -284,41 +250,25 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     }
   }
 
-  /**
-   * Gracefully shuts down service
-   */
   async shutdown(): Promise<void> {
     this.isShuttingDown = true;
-    // Give time for current operations to complete
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 
-  /**
-   * Gets current store
-   */
   getStore(): ITokenStore {
     return this.store;
   }
 
-  /**
-   * Gets current configuration
-   */
   getConfig(): TokenRegistryConfig {
     return this.config;
   }
 
-  /**
-   * Gets list of registered event handlers
-   */
   getRegisteredEventHandlers(): readonly TokenEventHandler<T>[] {
     return [...this.eventHandlers];
   }
 
   // ===================== PRIVATE METHODS =====================
 
-  /**
-   * Executes operation with error handling and timeout
-   */
   private async executeOperation<R>(
     operation: TokenOperation,
     fn: () => Promise<R>,
@@ -334,19 +284,14 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
       }
       return await fn();
     } catch (error) {
-      // Re-throw TokenRegistry errors as is
       if (error instanceof TokenRegistryError) {
         throw error;
       }
 
-      // Wrap other errors
       throw new TokenOperationError(operation, error as Error, context);
     }
   }
 
-  /**
-   * Adds timeout to promise
-   */
   private async withTimeout<R>(
     promise: Promise<R>,
     operation: string,
@@ -362,9 +307,6 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     ]);
   }
 
-  /**
-   * Notifies event handlers
-   */
   private async notifyEventHandlers(
     event: keyof TokenEventHandler<T>,
     token: string,
@@ -373,7 +315,6 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
     const promises = this.eventHandlers.map((handler) => {
       const handlerFn = handler[event];
       if (typeof handlerFn === "function") {
-        // ✅ Вызываем метод НА объекте handler с правильным контекстом
         return handlerFn.call(handler, token, data).catch((error) => {
           console.error(`Error in event handler during '${event}':`, error);
         });
@@ -385,13 +326,7 @@ export class TokenRegistryService<T extends ITokenMeta = ITokenMeta> {
   }
 }
 
-/**
- * Factory for creating TokenRegistryService instances
- */
 export class TokenRegistryServiceFactory {
-  /**
-   * Creates new service instance with specified parameters
-   */
   static create<T extends ITokenMeta = ITokenMeta>(
     store: ITokenStore,
     config: TokenRegistryConfig,
@@ -399,16 +334,10 @@ export class TokenRegistryServiceFactory {
     eventHandlers: TokenEventHandler<T>[] = []
   ): TokenRegistryService<T> {
     const service = new TokenRegistryService(store, config, validator);
-
-    // Register all event handlers
     eventHandlers.forEach((handler) => service.registerEventHandler(handler));
-
     return service;
   }
 
-  /**
-   * Creates service with default configuration
-   */
   static createDefault<T extends ITokenMeta = ITokenMeta>(
     store: ITokenStore,
     validator: ITokenValidator<T>

@@ -114,6 +114,7 @@ export const DEFAULT_CONFIG: TokenRegistryConfig = Object.freeze({
 
 export abstract class TokenRegistryError extends Error {
   abstract readonly code: string;
+  abstract readonly isCritical: boolean;
 
   constructor(
     message: string,
@@ -121,8 +122,6 @@ export abstract class TokenRegistryError extends Error {
   ) {
     super(message);
     this.name = this.constructor.name;
-
-    // For proper instanceof in TypeScript
     Object.setPrototypeOf(this, new.target.prototype);
   }
 
@@ -130,6 +129,7 @@ export abstract class TokenRegistryError extends Error {
     return {
       name: this.name,
       code: this.code,
+      isCritical: this.isCritical,
       message: this.message,
       context: this.context,
       stack: this.stack,
@@ -137,8 +137,11 @@ export abstract class TokenRegistryError extends Error {
   }
 }
 
+// ===================== BUSINESS ERRORS (NOT CRITICAL) =====================
+
 export class TokenValidationError extends TokenRegistryError {
   readonly code = "VALIDATION_ERROR";
+  readonly isCritical = false;
 
   constructor(message: string, context?: Record<string, unknown>) {
     super(`Validation failed: ${message}`, context);
@@ -147,14 +150,44 @@ export class TokenValidationError extends TokenRegistryError {
 
 export class TokenNotFoundError extends TokenRegistryError {
   readonly code = "TOKEN_NOT_FOUND";
+  readonly isCritical = false;
 
   constructor(token?: string) {
-    super("Token not found", { token });
+    super("Token not found", {
+      token: token ? token.substring(0, 10) + "..." : undefined,
+    });
   }
 }
 
+export class TokenAlreadyExistsError extends TokenRegistryError {
+  readonly code = "TOKEN_ALREADY_EXISTS";
+  readonly isCritical = false;
+
+  constructor(token?: string, context?: Record<string, unknown>) {
+    super("Token already exists in store", {
+      ...context,
+      token: token ? token.substring(0, 10) + "..." : undefined,
+    });
+  }
+}
+
+export class TokenExpiredError extends TokenRegistryError {
+  readonly code = "TOKEN_EXPIRED";
+  readonly isCritical = false;
+
+  constructor(token?: string, expiredAt?: number) {
+    super("Cannot operate on expired token", {
+      token: token ? token.substring(0, 10) + "..." : undefined,
+      expiredAt: expiredAt ? new Date(expiredAt).toISOString() : undefined,
+    });
+  }
+}
+
+// ===================== INFRASTRUCTURE ERRORS (CRITICAL) =====================
+
 export class TokenOperationError extends TokenRegistryError {
   readonly code = "OPERATION_FAILED";
+  readonly isCritical: boolean;
 
   constructor(
     operation: string,
@@ -166,17 +199,37 @@ export class TokenOperationError extends TokenRegistryError {
       originalError: originalError.message,
       originalStack: originalError.stack,
     });
+
+    this.isCritical = this.determineIfCritical(originalError);
+  }
+
+  private determineIfCritical(originalError: Error): boolean {
+    if (originalError instanceof TokenRegistryError) {
+      return originalError.isCritical;
+    }
+
+    return true;
   }
 }
 
 export class TokenTimeoutError extends TokenRegistryError {
   readonly code = "TIMEOUT_ERROR";
+  readonly isCritical = true;
 
   constructor(operation: string, timeout: number) {
     super(`Operation '${operation}' timed out after ${timeout}ms`, {
       operation,
       timeout,
     });
+  }
+}
+
+export class TokenStoreConnectionError extends TokenRegistryError {
+  readonly code = "STORE_CONNECTION_ERROR";
+  readonly isCritical = true;
+
+  constructor(message: string, context?: Record<string, unknown>) {
+    super(`Store connection failed: ${message}`, context);
   }
 }
 

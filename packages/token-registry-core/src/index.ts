@@ -19,14 +19,7 @@ export type {
 // Validators
 export { DefaultTokenValidator, NoOpValidator } from "./core/validators";
 
-// Errors
-export {
-  TokenRegistryError,
-  TokenValidationError,
-  TokenNotFoundError,
-  TokenOperationError,
-  TokenTimeoutError,
-} from "./core/interfaces";
+export * from "./core/interfaces";
 
 // Stores
 export {

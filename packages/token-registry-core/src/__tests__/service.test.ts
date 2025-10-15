@@ -9,6 +9,7 @@ import {
   TokenValidationError,
   TokenNotFoundError,
   TokenOperationError,
+  TokenExpiredError,
 } from "../index";
 
 describe("TokenRegistryService", () => {
@@ -208,8 +209,7 @@ describe("TokenRegistryService", () => {
         "New token must be different from old token"
       );
     });
-
-    it("should throw ValidationError if trying to rotate expired token", async () => {
+    it("should throw TokenExpiredError if trying to rotate expired token", async () => {
       const oldToken = "old-token-12345678";
       const newToken = "new-token-87654321";
 
@@ -229,11 +229,19 @@ describe("TokenRegistryService", () => {
 
       await expect(
         service.rotateToken(oldToken, newToken, newData)
-      ).rejects.toThrow(TokenValidationError);
+      ).rejects.toThrow(TokenExpiredError);
 
       await expect(
         service.rotateToken(oldToken, newToken, newData)
-      ).rejects.toThrow("Cannot rotate expired token");
+      ).rejects.toThrow("Cannot operate on expired token");
+
+      try {
+        await service.rotateToken(oldToken, newToken, newData);
+      } catch (error) {
+        expect(error).toBeInstanceOf(TokenExpiredError);
+        expect((error as TokenExpiredError).isCritical).toBe(false);
+        expect((error as TokenExpiredError).code).toBe("TOKEN_EXPIRED");
+      }
     });
 
     it("should validate new token format", async () => {
